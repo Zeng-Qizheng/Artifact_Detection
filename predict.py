@@ -25,7 +25,7 @@ def main():
 
     print('\033[1;32m Loading test file... \033[0m')
 
-    file_path = '/home/qz/文档/Qz/WorkSpace/ArtifactDataset/陈继金20170517 23-04-05'
+    file_path = '/home/qz/文档/Qz/workspace/ArtifactDataset/陈继金20170517 23-04-05'
     if os.path.exists(os.path.join(file_path, "raw_org.txt")) and os.path.exists(
             os.path.join(file_path, "Artifact_a.txt")):
         data_path = os.path.join(file_path, "raw_org.txt")  # 原始数据路径,"\\raw_org.txt"也可以
