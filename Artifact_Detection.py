@@ -193,7 +193,8 @@ def dataShow(showTimes=1):
     plt.show()
 
 
-def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single_check=10, figure_num=[], newLabel=None):
+def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single_check=10, figure_num=[],
+                 newLabel=None):
     plt.figure(figsize=(15, 10))
 
     if text_switch == True:  # 开启标签序号和起止位置显示
@@ -249,7 +250,7 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
     x_label = np.array(x_label) // 100
     # x_label = np.array(x_label).astype(str) #可要可不要
     # 虚惊一场，x_tick的开始必须是0，不然第二个窗口开始，又会出问题，总之ticks参数还是和波形有关联，必须和xlim一致，lebels则可以自定义
-    # x_tick = range(0, end - start, math.ceil((end - start) / len(x_label)))   #cuowei
+    # x_tick = range(0, end - start, math.ceil((end - start) / len(x_label)))   #取整会丢弃部分精度，会累加，导致坐标与实际产生偏差
     x_tick = np.linspace(0, end - start, len(x_label))  # linspace比range好用，不用自己求步进值，避免长度不对
     plt.xticks(ticks=x_tick, labels=x_label)
 
