@@ -13,6 +13,7 @@ import pandas as pd
 from scipy import signal
 import os
 import math
+import copy
 
 # @vectorize(['complex64(complex64, complex64)'], target='gpu')
 
@@ -109,25 +110,32 @@ def artifact_check(orgLabel, Sample_org=1000, down_sample_rate=10):
     # 很多体动是乱序的，有些是在后面补上的
     sort = np.lexsort(orgLabel.T[:3, :])  # 默认对二维数组最后一行排序并返回索引
     orgLabel = orgLabel[sort, :]  # 根据体动类型排序
-
+    '''
+    重新排序后赋值并不需要深拷贝，直接赋值即可
+    之前之所以会出现后面加入的新标签排序后能画出来但没有显示text文本信息，以及错位显示，是因为排序对orgLabel排序只对当前函数有效
+    （其中能画出来是因为画图部分，只要给出起止位置即可画图，与text没有任何关系）
+    final_figure函数里面的orgLabel依旧是没有排序的全局变量，不受排序影响
+    所以才导致画图时，更新了后面补的标签的图示颜色，但没有显示对应的标签内容text，以及莫名其妙的图框外的text信息
+    '''
     figure_num = [1, math.ceil(len(orgLabel) / single_check)]  # 用于显示第几画和共几画，如果能知道一个函数被调用多少次就好了
-    start_point = 0  # 记录开始的体动个数，确切来说应该叫artifact_num
-    while True:
-        if start_point == 0:  # 第一画的前面不用交叠，所以单独写
-            final_figure(end=orgLabel[single_check][3] + overlap, text_switch=True, start_point=start_point,
-                         single_check=single_check, figure_num=figure_num)
-            start_point += single_check  # 跳转到下一个画面的开始
+    artifact_num = 0  # 记录开始的体动xuhao，确切来说应该叫artifact_num
+    while artifact_num >= 0:
+        if artifact_num == 0:  # 第一画的前面不用交叠，所以单独写
+            final_figure(end=orgLabel[single_check][3] + overlap, text_switch=True, artifact_num=artifact_num,
+                         single_check=single_check, figure_num=figure_num, newLabel=orgLabel)
+            artifact_num += single_check  # 跳转到下一个画面的开始
             figure_num[0] += 1  # 画面数加1
-        elif start_point + single_check >= len(orgLabel):  # 最后一画最特殊，需要考量的东西较多，bug也多
-            start_point = len(orgLabel) - single_check - 1  # 统一修改start_point，不用额外修改single_check，省事
-            final_figure(start=orgLabel[-single_check][2] - overlap, text_switch=True, start_point=start_point,
-                         single_check=single_check, figure_num=figure_num)
-            break  # 跳出死循环
+        elif artifact_num + single_check >= len(orgLabel):  # 最后一画最特殊，需要考量的东西较多，bug也多
+            artifact_num = len(orgLabel) - single_check - 1  # 统一修改start_point，不用额外修改single_check，省事
+            final_figure(start=orgLabel[-single_check][2] - overlap, text_switch=True, artifact_num=artifact_num,
+                         single_check=single_check, figure_num=figure_num, newLabel=orgLabel)
+            # break  # 跳出死循环
+            artifact_num = -1
         else:  # 正常情况的循环
-            final_figure(start=orgLabel[start_point][2] - overlap,
-                         end=orgLabel[start_point + single_check][3] + overlap, text_switch=True,
-                         start_point=start_point, single_check=single_check, figure_num=figure_num)
-            start_point += single_check
+            final_figure(start=orgLabel[artifact_num][2] - overlap,
+                         end=orgLabel[artifact_num + single_check][3] + overlap, text_switch=True,
+                         artifact_num=artifact_num, single_check=single_check, figure_num=figure_num, newLabel=orgLabel)
+            artifact_num += single_check
             figure_num[0] += 1
 
 
@@ -185,7 +193,7 @@ def dataShow(showTimes=1):
     plt.show()
 
 
-def final_figure(start=None, end=None, text_switch=False, start_point=0, single_check=10, figure_num=[]):
+def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single_check=10, figure_num=[], newLabel=None):
     plt.figure(figsize=(15, 10))
 
     if text_switch == True:  # 开启标签序号和起止位置显示
@@ -194,16 +202,17 @@ def final_figure(start=None, end=None, text_switch=False, start_point=0, single_
         if end == None:
             end = len(newBCG)
 
-        for i in range(start_point, start_point + single_check):
-            # if len(newBCG[orgLabel[i][2]:orgLabel[i][3]]) != 0:  # 有时候会出现空序列，意思是某个体动范围内有空值？无解
-            plt.text((orgLabel[i][2] + orgLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(orgBCG[orgLabel[i][2]:orgLabel[i][3]]) + 120,
+        for i in range(artifact_num, artifact_num + single_check):
+            # if len(newBCG[newLabel[i][2]:newLabel[i][3]]) != 0:  # 有时候会出现空序列，意思是某个体动范围内有空值？无解
+            print(newLabel[i][0])
+            plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
+                     np.average(orgBCG[newLabel[i][2]:newLabel[i][3]]) + 130,
                      # 用numpy的max比普通max快很多，表现在拖动图片时延迟低很多
-                     orgLabel[i][0], fontsize=12, color="Black", style="italic", weight="light",
+                     (newLabel[i][0], newLabel[i][1]), fontsize=12, color="Black", style="italic", weight="light",
                      verticalalignment='center', horizontalalignment='center', rotation=0)
-            plt.text((orgLabel[i][2] + orgLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(orgBCG[orgLabel[i][2]:orgLabel[i][3]]) + 110,
-                     (down_sample_rate * orgLabel[i][2] // 1000, down_sample_rate * orgLabel[i][3] // 1000),
+            plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
+                     np.average(orgBCG[newLabel[i][2]:newLabel[i][3]]) + 110,
+                     (down_sample_rate * newLabel[i][2] / 1000, down_sample_rate * newLabel[i][3] / 1000),
                      fontsize=12, color="Black", style="italic", weight="light", verticalalignment='center',
                      horizontalalignment='center', rotation=0)
 
@@ -214,7 +223,39 @@ def final_figure(start=None, end=None, text_switch=False, start_point=0, single_
     plt.plot(ArtifactData_tpye5[start:end], color='orange', label="无效片段")
     plt.plot(newBCG[start:end], color='green', label="正常数据")
     # plt.ylim(-np.average(newBCG)-200,np.average(newBCG)+200)
-    plt.ylim(1550, 2150)
+
+    '''
+    可以说很离谱了，x_tick在test测试不行，在实际使用又可以
+    test中显示的波形坐标还是会跟plt.xticks(x_tick)有关联，但plt.xticks(ticks=x_tick, labels=x_label)又是可以的
+    而实际使用，x_tick = range(start, end, 100)却可以直接作为plt.xticks(x_tick)的参数，不会因为start的位置对波形位置产生影响
+    实际使用中，plt.xticks(ticks=x_tick, labels=x_label)很难计算对应位置，总是报错不匹配
+    还是会有影响，比如把end*10就出问题了，只是之前恰巧不知为啥避开了问题
+    在预处理之前，已经进行过降采样，如果要显示1000Hz的坐标，必须都*10
+    
+    # x_tick = range(start, end, 1000 // down_sample_rate)
+    # plt.xticks(x_tick)
+    # 这四行程序，两者的效果是一样的
+    # x_label = range(start, end, 100)
+    # x_tick = range(start, end, math.ceil((end - start) / len(x_label)))
+
+    x_label = range(start*10, end*10, 500)
+    x_label = np.array(x_label).astype(str) #可要可不要
+    x_tick = range(start, end, math.ceil((end - start) / len(x_label))) #start必须从0开始
+    '''
+    # 最终这个方法最完美，可以随意自定义
+    # x_label = range(start * 10, end * 10, 500)# 1000Hz显示，内容太多了，容易重叠，不便于观察
+    # x_label = list(range(start, end, 100))  #range() 返回的是“range object”，而不是实际的list 值
+    x_label = range(start, end, 100)  # range() 返回的是“range object”，而不是实际的list 值
+    x_label = np.array(x_label) // 100
+    # x_label = np.array(x_label).astype(str) #可要可不要
+    # 虚惊一场，x_tick的开始必须是0，不然第二个窗口开始，又会出问题，总之ticks参数还是和波形有关联，必须和xlim一致，lebels则可以自定义
+    # x_tick = range(0, end - start, math.ceil((end - start) / len(x_label)))   #cuowei
+    x_tick = np.linspace(0, end - start, len(x_label))  # linspace比range好用，不用自己求步进值，避免长度不对
+    plt.xticks(ticks=x_tick, labels=x_label)
+
+    plt.xlabel('X Axis ：刻度为在原信号中的起始与终止位置')
+    plt.ylabel('Y Axis ：Voltage')
+    # plt.ylim(1100, 2600)
     plt.title('第 {0} 画 / 共 {1} 画'.format(figure_num[0], figure_num[1]), fontsize=20)
     plt.legend(ncol=2)
     plt.show()
@@ -247,13 +288,13 @@ def Butterworth(x, type, lowcut=0, highcut=0, order=10, Sample_org=1000):
 
 
 if __name__ == "__main__":
-    filePath = "/home/qz/文档/Qz/workspace/ArtifactDataset/岑玉娴2018060622-16-25"  # 文件夹的绝对路劲
+    filePath = "/home/qz/文档/Qz/workspace/ArtifactDataset/巢守达 2018081722-43-54"  # 文件夹的绝对路劲
     bcgPath = filePath + "/raw_org.txt"  # 原始数据路径
     labelPath = filePath + "/Artifact_a.txt"  # 体动数据路径
     orgBCG = pd.read_csv(bcgPath, header=None).to_numpy().reshape(-1)  # 原始数据读取为numpy形式
     orgLabel = pd.read_csv(labelPath, header=None).to_numpy().reshape(-1, 4)  # 标签数据读取为numpy形式，并reshape为n行4列的数组
 
-    # orgBCG = Butterworth(orgBCG, type='bandpass', lowcut=2, highcut=5, order=2, Sample_org=1000)
+    # orgBCG = Butterworth(orgBCG, type='bandpass', lowcut=0.1, highcut=1, order=2, Sample_org=1000)
 
     down_sample_rate = 10  # 降采样倍数
     newBCG = np.full(len(orgBCG) // down_sample_rate, np.nan)  # 创建与orgBCG降采样后一样长度的空数组
