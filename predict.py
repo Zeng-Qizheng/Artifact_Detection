@@ -25,7 +25,7 @@ def main():
 
     print('\033[1;32m Loading test file... \033[0m')
 
-    file_path = '/home/qz/文档/Qz/workspace/ArtifactDataset/陈继金20170517 23-04-05'
+    file_path = '/home/qz/文档/Qz/workspace/ArtifactDataset/岑玉娴2018060622-16-25'
     if os.path.exists(os.path.join(file_path, "raw_org.txt")) and os.path.exists(
             os.path.join(file_path, "Artifact_a.txt")):
         data_path = os.path.join(file_path, "raw_org.txt")  # 原始数据路径,"\\raw_org.txt"也可以
@@ -40,8 +40,8 @@ def main():
 
     bcg_data = sample_rate_change(bcg_data, change_rate=-10)
 
-    start_point = 1500000
-    bcg_data = bcg_data[start_point:start_point + 720000]  # 只取其中一部分，因为分割的速度慢
+    start_point = 2000000
+    bcg_data = bcg_data[start_point:start_point + 500000]  # 只取其中一部分，因为分割的速度慢
 
     bcg_data = Butterworth(bcg_data, type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100)
     # plt.plot(bcg_data)
@@ -100,14 +100,18 @@ def main():
         print('Finished testing')
 
     # predict_result = predict_result.astype(int)
-    print(predict_result)
+    # print(predict_result)
 
+    cut_buf = np.array([])
     for i in range(len(predict_result)):
         if predict_result[i] == 1:
             artifact_signal[i * 100:(i + 5) * 100] = normal_signal[i * 100:(i + 5) * 100]
+            cut_buf = np.append(cut_buf, i).astype(int)
             # normal_signal[i * 100:(i + 5) * 100] = (np.nan,)
-
-    normal_signal = normal_signal - artifact_signal  # 直接减，nan会出问题，无论作为减数还是被减数
+    # print('cut_buf : ',cut_buf)
+    for i in range(len(cut_buf)):
+        normal_signal[cut_buf[i] * 100:(cut_buf[i] + 5) * 100] = np.nan
+    # normal_signal = normal_signal - artifact_signal  # 直接减，nan会出问题，无论作为减数还是被减数
 
     plt.plot(artifact_signal, color='red', label="大体动")
     plt.plot(normal_signal, color='green', label="正常数据")

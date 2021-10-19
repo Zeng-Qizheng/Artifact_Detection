@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 
+
 # official pretrain weights
 # model_urls = {
 #     'vgg11': 'https://download.pytorch.org/models/vgg11-bbd30ac9.pth',
@@ -16,7 +17,7 @@ class VGG(nn.Module):
         self.features = features
         self.classifier = nn.Sequential(
             # nn.Linear(512*7*7, 4096),
-            nn.Linear(512*15, 4096),
+            nn.Linear(512 * 15, 4096),
             nn.ReLU(True),
             nn.Dropout(p=0.5),
             nn.Linear(4096, 4096),

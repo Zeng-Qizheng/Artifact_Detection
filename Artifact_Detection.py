@@ -14,6 +14,8 @@ from scipy import signal
 import os
 import math
 import copy
+from sklearn import preprocessing
+from my_utils import *
 
 # @vectorize(['complex64(complex64, complex64)'], target='gpu')
 
@@ -33,7 +35,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # GPU加速
 # print(Label.reshape(-1, 4))
 
 # @vectorize(nopython=True, parallel = True)    #numba Python加速的一种装饰器，尚未调试成功
-def dataSubsampled(sampleNum=1):
+def data_Subsampled(orgBCG=[], orgLabel=[], sampleNum=1):
     """
     Author:Qz
     函数说明:对原时间序列进行降采样
@@ -43,13 +45,15 @@ def dataSubsampled(sampleNum=1):
     for i in range(len(orgBCG) // sampleNum):
         newBCG[i] = orgBCG[i * sampleNum]
     for i in range(orgLabel.shape[0]):
-        orgLabel[i][2] //= sampleNum
+        orgLabel[i][2] //= sampleNum  # sunshi weibuzhudao
         orgLabel[i][3] //= sampleNum
 
     print('降采样倍数：%d' % sampleNum)
     print('原始数据长度：%d' % len(orgBCG))
     print('降采样后长度：%d' % len(newBCG))
     print('体动个数：%d' % orgLabel.shape[0])
+
+    return newBCG, orgLabel
 
 
 def labelShow(down_sample_rate=10):
@@ -205,24 +209,24 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
 
         for i in range(artifact_num, artifact_num + single_check):
             # if len(newBCG[newLabel[i][2]:newLabel[i][3]]) != 0:  # 有时候会出现空序列，意思是某个体动范围内有空值？无解
-            print(newLabel[i][0])
             plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(orgBCG[newLabel[i][2]:newLabel[i][3]]) + 130,
+                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 130,
                      # 用numpy的max比普通max快很多，表现在拖动图片时延迟低很多
                      (newLabel[i][0], newLabel[i][1]), fontsize=12, color="Black", style="italic", weight="light",
                      verticalalignment='center', horizontalalignment='center', rotation=0)
             plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(orgBCG[newLabel[i][2]:newLabel[i][3]]) + 110,
+                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 110,
                      (down_sample_rate * newLabel[i][2] / 1000, down_sample_rate * newLabel[i][3] / 1000),
                      fontsize=12, color="Black", style="italic", weight="light", verticalalignment='center',
                      horizontalalignment='center', rotation=0)
+            print('average = ', np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 110)
 
     plt.plot(ArtifactData_tpye1[start:end], color='red', label="大体动")
     plt.plot(ArtifactData_tpye2[start:end], color='blue', label="小体动")
     plt.plot(ArtifactData_tpye3[start:end], color='Yellow', label="深呼吸")
     plt.plot(ArtifactData_tpye4[start:end], color='purple', label="脉冲体动")
     plt.plot(ArtifactData_tpye5[start:end], color='orange', label="无效片段")
-    plt.plot(newBCG[start:end], color='green', label="正常数据")
+    plt.plot(ArtifactData_tpye0[start:end], color='green', label="正常数据")
     # plt.ylim(-np.average(newBCG)-200,np.average(newBCG)+200)
 
     '''
@@ -246,12 +250,28 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
     # 最终这个方法最完美，可以随意自定义
     # x_label = range(start * 10, end * 10, 500)# 1000Hz显示，内容太多了，容易重叠，不便于观察
     # x_label = list(range(start, end, 100))  #range() 返回的是“range object”，而不是实际的list 值
-    x_label = range(start, end, 100)  # range() 返回的是“range object”，而不是实际的list 值
-    x_label = np.array(x_label) // 100
+    # x_label = range(start, end, 100)  # range() 返回的是“range object”，而不是实际的list 值
+    x_label = np.arange(start, end, 100)
+    x_label = np.array(x_label) / 100  # // sunshi
+
+    # print(start)
+    # for i in range(10):
+    #     print(x_label[i])
+
     # x_label = np.array(x_label).astype(str) #可要可不要
     # 虚惊一场，x_tick的开始必须是0，不然第二个窗口开始，又会出问题，总之ticks参数还是和波形有关联，必须和xlim一致，lebels则可以自定义
     # x_tick = range(0, end - start, math.ceil((end - start) / len(x_label)))   #取整会丢弃部分精度，会累加，导致坐标与实际产生偏差
-    x_tick = np.linspace(0, end - start, len(x_label))  # linspace比range好用，不用自己求步进值，避免长度不对
+    # x_tick = np.linspace(0, end - start, len(x_label))  # linspace比range好用，不用自己求步进值，避免长度不对
+    # np.linspace是从0开始算的，好比[0:10]实际是0~9整好十个，是没有算上end的，故endpoint必须为False，否则不均匀
+    # linspace比range好用，不用自己求步进值，避免长度不对
+    x_tick = np.linspace(0, 100 * len(x_label), len(x_label), endpoint=False, dtype=int)
+    # x_tick = range(0, 100 * len(x_label), 100)  # np.linspace不知为何会导致间隔100.15...endpoint改成False又不会了，或者用range
+
+    # print('len(x_label) : ', len(x_label))
+    # print('linspace = ', x_tick[:100])
+
+    # for i in range(10):
+    #     print(x_tick[i])
     plt.xticks(ticks=x_tick, labels=x_label)
 
     plt.xlabel('X Axis ：刻度为在原信号中的起始与终止位置')
@@ -288,6 +308,12 @@ def Butterworth(x, type, lowcut=0, highcut=0, order=10, Sample_org=1000):
         print("Please choose a type of fliter")
 
 
+def standardization(data):
+    mu = np.mean(data, axis=0)
+    sigma = np.std(data, axis=0)
+    return (data - mu) / sigma
+
+
 if __name__ == "__main__":
     filePath = "/home/qz/文档/Qz/workspace/ArtifactDataset/巢守达 2018081722-43-54"  # 文件夹的绝对路劲
     bcgPath = filePath + "/raw_org.txt"  # 原始数据路径
@@ -295,21 +321,32 @@ if __name__ == "__main__":
     orgBCG = pd.read_csv(bcgPath, header=None).to_numpy().reshape(-1)  # 原始数据读取为numpy形式
     orgLabel = pd.read_csv(labelPath, header=None).to_numpy().reshape(-1, 4)  # 标签数据读取为numpy形式，并reshape为n行4列的数组
 
-    # orgBCG = Butterworth(orgBCG, type='bandpass', lowcut=0.1, highcut=1, order=2, Sample_org=1000)
-
     down_sample_rate = 10  # 降采样倍数
     newBCG = np.full(len(orgBCG) // down_sample_rate, np.nan)  # 创建与orgBCG降采样后一样长度的空数组
+    newBCG, orgLabel = data_Subsampled(orgBCG=orgBCG, orgLabel=orgLabel, sampleNum=down_sample_rate)
+    temBCG = copy.deepcopy(newBCG)
+
+    # newBCG = Butterworth(newBCG, type='bandpass', lowcut=0.01, highcut=20, order=2, Sample_org=100)
+
+    my_fft2(signal=newBCG)
+
+    ArtifactData_tpye0 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye1 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye2 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye3 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye4 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye5 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
-    ArtifactData_tpye0 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
 
     # 依次执行功能代码
-    dataSubsampled(down_sample_rate)
+    # newBCG = standardization(newBCG)
+    # newBCG = preprocessing.normalize(newBCG.reshape(1,-1), axis=1, norm='max').reshape(-1)
+
     # labelShow(down_sample_rate=down_sample_rate)  #显示整份数据的标签
     dataProcessing()  # 将各类体动分别存储
+
+    ArtifactData_tpye0 = newBCG
+    newBCG = copy.deepcopy(temBCG)
+
     # dataShow()    #单纯显示整份数据的标签情况
     # muti_dataShow(single_len=3600, Sample_org=1000, down_sample_rate=down_sample_rate)    #固定长度交叠显示
     artifact_check(orgLabel, down_sample_rate=down_sample_rate)  # 根据单次体动数量分窗显示，检测标签情况

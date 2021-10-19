@@ -14,8 +14,141 @@ from torchvision import transforms, datasets
 import torch.optim as optim
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from matplotlib.pylab import mpl
 import multiprocessing
 from model import vgg
+import numpy as np
+from scipy.fftpack import fft, ifft
+
+mpl.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文
+mpl.rcParams['axes.unicode_minus'] = False  # 显示负号
+
+
+def my_fft1(signal, sampling_point=250):
+    """
+    Author:Qz
+    函数说明:对输入信号进行FFT，并画出频谱图
+    :param signal:                输入原始信号
+    :param sampling_point:        每秒的采样点，大于信号最高频率的两倍，奈奎斯特采样定理
+    :return:                      无
+    """
+    # 采样点选择1400个，因为设置的信号频率分量最高为600赫兹，根据采样定理知采样频率要大于信号频率2倍，
+    # 所以这里设置采样频率为1400赫兹（即一秒内有1400个采样点，一样意思的）
+    # x = np.linspace(0, 1, sampling_point)
+
+    # 设置需要采样的信号，频率分量有200，400和600
+    # y = 7 * np.sin(2 * np.pi * 200 * x) + 5 * np.sin(2 * np.pi * 400 * x) + 3 * np.sin(2 * np.pi * 600 * x)
+    fft_y = fft(signal)  # 快速傅里叶变换
+
+    # N = 1400
+    x = np.arange(len(fft_y))  # 频率个数
+    half_x = x[range(int(len(fft_y) / 2))]  # 取一半区间
+
+    abs_y = np.abs(fft_y)  # 取复数的绝对值，即复数的模(双边频谱)
+    angle_y = np.angle(fft_y)  # 取复数的角度
+    normalization_y = abs_y / len(fft_y)  # 归一化处理（双边频谱）
+    normalization_half_y = normalization_y[range(int(len(fft_y) / 2))]  # 由于对称性，只取一半区间（单边频谱）
+
+    # plt.subplot(231)
+    # plt.plot(x, y)
+    # plt.title('原始波形')
+
+    plt.subplot(232)
+    plt.plot(x, fft_y, 'black')
+    plt.title('双边振幅谱(未求振幅绝对值)', fontsize=9, color='black')
+
+    plt.subplot(233)
+    plt.plot(x, abs_y, 'r')
+    plt.title('双边振幅谱(未归一化)', fontsize=9, color='red')
+
+    plt.subplot(234)
+    plt.plot(x, angle_y, 'violet')
+    plt.title('双边相位谱(未归一化)', fontsize=9, color='violet')
+
+    plt.subplot(235)
+    plt.plot(x, normalization_y, 'g')
+    plt.title('双边振幅谱(归一化)', fontsize=9, color='green')
+
+    plt.subplot(236)
+    plt.plot(half_x, normalization_half_y, 'blue')
+    plt.title('单边振幅谱(归一化)', fontsize=9, color='blue')
+
+    plt.show()
+
+
+def my_fft2(signal, fs=100):
+    """
+    Author:Qz
+    函数说明:对输入信号进行FFT，并画出频谱图（目前这个版本效果最好，最大问题在于FFT频谱分析原理不太懂，导致移植困难，频率分辨率不是很懂）
+    :param signal:                输入原始信号
+    :param fs:                    信号频率？
+    :return:                      无
+    """
+    x = range(len(signal))  # X轴刻度
+    delta_f = 1 * fs / len(signal)  # 频率分辨率，为1*fs/N
+
+    fft_aC1 = fft(signal)  # 快速傅里叶变换
+
+    aC1xf = np.arange(len(signal))  # 频率
+    aC1xf2 = aC1xf[range(int(len(x) / 2))]  # 取一半区间
+
+    aC1yf = abs(fft(signal))  # 取绝对值
+    aC1yf1 = abs(fft(signal)) / len(x)  # 归一化处理
+    aC1yf2 = aC1yf1[range(int(len(x) / 2))]  # 由于对称性，只取一半区间
+
+    plt.subplot(2, 1, 1)
+    plt.plot(signal)
+    plt.title('Original Wave')
+
+    plt.subplot(2, 1, 2)
+    plt.ylim(0, 10)
+    plt.plot(aC1xf2 * delta_f, aC1yf2, 'black')
+    plt.title('FFT', fontsize=10, color='black')
+    plt.show()
+
+
+def my_fft3(signal):
+    """
+    Author:Qz
+    函数说明:对输入信号进行FFT，并画出频谱图
+    :param signal:                输入原始信号
+    :param sampling_point:        每秒的采样点，大于信号最高频率的两倍，奈奎斯特采样定理
+    :return:                      无
+    """
+    # 采样点选择1400个，因为设置的信号频率分量最高为600赫兹，根据采样定理知采样频率要大于信号频率2倍，所以这里设置采样频率为1400赫兹（即一秒内有1400个采样点，一样意思的）
+
+    # 设置需要采样的信号，频率分量有180，390和600
+
+    yy = fft(signal)  # 快速傅里叶变换
+
+    yreal = yy.real  # 获取实数部分
+    yimag = yy.imag  # 获取虚数部分
+
+    yf = abs(fft(signal))  # 取绝对值
+    yf1 = abs(fft(signal)) / len(signal)  # 归一化处理
+    yf2 = yf1[range(int(len(signal) / 2))]  # 由于对称性，只取一半区间
+
+    xf = np.arange(len(signal))  # 频率
+    xf1 = xf
+    xf2 = xf[range(int(len(signal) / 2))]  # 取一半区间
+
+    plt.subplot(221)
+    plt.plot(signal)
+    plt.title('Original wave')
+
+    plt.subplot(222)
+    plt.plot(xf, yf, 'r')
+    plt.title('FFT of Mixed wave(two sides frequency range)', fontsize=7, color='#7A378B')  # 注意这里的颜色可以查询颜色代码表
+
+    plt.subplot(223)
+    plt.plot(xf1, yf1, 'g')
+    plt.title('FFT of Mixed wave(normalization)', fontsize=9, color='r')
+
+    plt.subplot(224)
+    plt.plot(xf2, yf2, 'b')
+    plt.title('FFT of Mixed wave)', fontsize=10, color='#F08080')
+
+    plt.show()
 
 
 def sample_rate_change(bcg_data, change_rate):

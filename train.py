@@ -46,7 +46,6 @@ def Processing_func(input, index):  # 用于多进程调用
 
 
 # @nb.jit()
-# @nb.jit()
 def data_preprocess(dataset_input):
     # 首先统计输入数据集的体动各类别数量和分布情况
     mask = np.unique(dataset_input[:, 0])  # np.unique寻找数组里面的重复数值
@@ -62,6 +61,7 @@ def data_preprocess(dataset_input):
     dataset_input = dataset_input[sort, :]  # 根据体动类型排序
 
     data_load = dataset_input[:, 1:]  # 把数据部分单独取出来，方便后面操作
+
     # 从排序好的数组分别把每一类体动单片段独取出来
     data_class0_tem = data_load[:tmp[0]]
     data_class1_tem = data_load[tmp[0]:tmp[0] + tmp[1]]
@@ -70,16 +70,20 @@ def data_preprocess(dataset_input):
     data_class4_tem = data_load[-tmp[4] - tmp[5]:-tmp[5]]
     data_class5_tem = data_load[-tmp[5]:]
 
+    test_time = time.perf_counter()
+    for i in range(len(data_class0_tem)):
+        data_class0_tem[i] = Butterworth(data_class0_tem[i], type='bandpass', lowcut=2, highcut=15, order=2,
+                                         Sample_org=100)
+        # plt.plot(data_class0_tem[i], color='blue', label="正常数据")
+        # plt.show()
+    print('Butterworth test_time = %2d min : %2d s' % (
+        (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
+
+    #
     # for i in range(100):
-    #     plt.plot(data_class4_tem[i], color='blue', label="正常数据")
+    #     plt.plot(data_class0_tem[i], color='blue', label="正常数据")
     #     plt.show()
 
-    test_time = time.perf_counter()
-    # 去掉幅值超过一定范围的正常片段
-    save_index = np.array([])
-    # for i in range(tmp[0]):  # 执行速度非常慢，需要11s
-    #     if np.max(data_class0_tem[i]) - np.min(data_class0_tem[i]) < 150:
-    #         save_index = np.append(save_index, i)
     # if tem_flag == 0:
     #     tem_class0 = data_class0_tem[i]
     #     tem_flag += 1
@@ -107,23 +111,34 @@ def data_preprocess(dataset_input):
     #     temp = AllBeat_dataset[win].get()
     #     save_index = np.append(save_index, temp)  # 根据返回对象提取对应的返回数值
 
-    # data_class0_tem = data_class0_tem[save_index.astype(int), :]  # 不能直接int(save_index)
-    # print('预处理：剔除阈值过大的片段后剩余正常片段个数 : ', data_class0_tem.shape)
-    # print('test_time = %2d min : %2d s' % (
-    #     (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
+    test_time = time.perf_counter()
+    # 去掉幅值超过一定范围的正常片段
+    threshold_value = 300
+    save_index = np.array([])
+    for i in range(tmp[0]):  # 执行速度非常慢，需要11s
+        if np.max(data_class0_tem[i]) - np.min(data_class0_tem[i]) < threshold_value:
+            save_index = np.append(save_index, i)
+
+    tem_cout = data_class0_tem.shape[0]  #
+    data_class0_tem = data_class0_tem[save_index.astype(int), :]  # 不能直接int(save_index)
+    print('All of the delete frag is : ', tem_cout - data_class0_tem.shape[0])
+    print('预处理：剔除阈值过大的片段后剩余正常片段个数 : ', data_class0_tem.shape)
+    print('test_time = %2d min : %2d s' % (
+        (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
 
     # 随机抽取，使样本均衡且乱序
     data_class0_tem = data_class0_tem[
         # np.random.randint(data_class0_tem.shape[0], size=min(tmp.values()))]  # 这里不能继续使用tmp[0]，越界，用剔除后的维度
         np.random.randint(data_class0_tem.shape[0], size=10 * min(tmp.values()))]  # 二分类用这条语句
-    data_class1_tem = data_class1_tem[np.random.randint(tmp[1], size=4*min(tmp.values()))]
-    data_class2_tem = data_class2_tem[np.random.randint(tmp[2], size=min(tmp.values()))]
-    data_class3_tem = data_class3_tem[np.random.randint(tmp[3], size=3*min(tmp.values()))]
+    data_class1_tem = data_class1_tem[np.random.randint(tmp[1], size=8 * min(tmp.values()))]
+    # data_class2_tem = data_class2_tem[np.random.randint(tmp[2], size=min(tmp.values()))]
+    # data_class3_tem = data_class3_tem[np.random.randint(tmp[3], size=3 * min(tmp.values()))]
     data_class4_tem = data_class4_tem[np.random.randint(tmp[4], size=min(tmp.values()))]
-    data_class5_tem = data_class5_tem[np.random.randint(tmp[5], size=min(tmp.values()))]
+    # data_class5_tem = data_class5_tem[np.random.randint(tmp[5], size=min(tmp.values()))]
 
     preproccessed_data = np.vstack(
-        (data_class0_tem, data_class1_tem, data_class2_tem, data_class3_tem, data_class4_tem, data_class5_tem))
+        # (data_class0_tem, data_class1_tem, data_class2_tem, data_class3_tem, data_class4_tem, data_class5_tem))
+        (data_class0_tem, data_class1_tem, data_class4_tem))
     # preproccessed_label = np.hstack((np.full(min(tmp.values()), 0), np.full(min(tmp.values()), 1),
     #                                  np.full(min(tmp.values()), 2), np.full(min(tmp.values()), 3),
     #                                  np.full(min(tmp.values()), 4), np.full(min(tmp.values()), 5)))
@@ -136,8 +151,9 @@ def data_preprocess(dataset_input):
     #     plt.plot(filter_show[i], color='blue', label="滤波后波形")
     #     plt.show()
 
+    ###
     for i in range(len(preproccessed_data)):
-        preproccessed_data[i] = Butterworth(preproccessed_data[i], type='bandpass', lowcut=2, highcut=8, order=2,
+        preproccessed_data[i] = Butterworth(preproccessed_data[i], type='bandpass', lowcut=2, highcut=15, order=2,
                                             Sample_org=100)
 
     return preproccessed_data, preproccessed_label
@@ -148,7 +164,7 @@ def main():
     epochs = 10
     batch_size = 128
     split_ratio = 0.7
-    random.seed(3)
+    random.seed(1)
     start = time.perf_counter()  # Python 3.8不支持time.clock()
 
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -241,12 +257,11 @@ def main():
                 outputs = net(val_datas.to(device))
                 predict_y = torch.max(outputs, dim=1)[1]
 
-                # if epoch == 9:
-                #     for i in range(len(val_datas)):
-                #         print(val_datas.shape)
-                #         plt.plot(val_datas[i,0,:])
-                #         plt.title('The predict result is : {}'.format(predict_y[i]))
-                #         plt.show()
+                if epoch == 9:
+                    for i in range(len(val_datas)):
+                        plt.plot(val_datas[i, 0, :])
+                        plt.title('The [predict / real]  is [{0} / {1}]'.format(predict_y[i], val_labels[i]))
+                        plt.show()
 
                 acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
 
