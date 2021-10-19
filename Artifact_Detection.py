@@ -98,7 +98,7 @@ def dataProcessing():
         # for t in range(orgLabel[i][2], orgLabel[i][3]):
         #     orgBCG[t] = np.nan    #这样赋值会报错
         # 赋空值给正常数据List的体动部分，相当于扣掉，方便画图显示
-        newBCG[orgLabel[i][2]:orgLabel[i][3]] = ArtifactData_tpye0[orgLabel[i][2]:orgLabel[i][3]]
+        temBCG[orgLabel[i][2]:orgLabel[i][3]] = ArtifactData_tpye0[orgLabel[i][2]:orgLabel[i][3]]
 
 
 def artifact_check(orgLabel, Sample_org=1000, down_sample_rate=10):
@@ -326,9 +326,8 @@ if __name__ == "__main__":
     newBCG, orgLabel = data_Subsampled(orgBCG=orgBCG, orgLabel=orgLabel, sampleNum=down_sample_rate)
     temBCG = copy.deepcopy(newBCG)
 
-    # newBCG = Butterworth(newBCG, type='bandpass', lowcut=0.01, highcut=20, order=2, Sample_org=100)
-
-    my_fft2(signal=newBCG)
+    # newBCG = Butterworth(newBCG, type='bandpass', lowcut=0.1, highcut=20, order=2, Sample_org=100)
+    # my_fft2(signal=newBCG, fs=100)
 
     ArtifactData_tpye0 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye1 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
@@ -343,9 +342,7 @@ if __name__ == "__main__":
 
     # labelShow(down_sample_rate=down_sample_rate)  #显示整份数据的标签
     dataProcessing()  # 将各类体动分别存储
-
-    ArtifactData_tpye0 = newBCG
-    newBCG = copy.deepcopy(temBCG)
+    ArtifactData_tpye0 = temBCG
 
     # dataShow()    #单纯显示整份数据的标签情况
     # muti_dataShow(single_len=3600, Sample_org=1000, down_sample_rate=down_sample_rate)    #固定长度交叠显示
