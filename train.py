@@ -16,7 +16,10 @@ import torch.optim as optim
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import multiprocessing
-from model import vgg
+from model import *
+from my_utils import *
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+from sklearn import preprocessing
 from my_utils import *
 
 np.set_printoptions(threshold=np.inf)  # 解决print打印太多东西自动省略的问题
@@ -70,18 +73,19 @@ def data_preprocess(dataset_input):
     data_class4_tem = data_load[-tmp[4] - tmp[5]:-tmp[5]]
     data_class5_tem = data_load[-tmp[5]:]
 
-    test_time = time.perf_counter()
-    for i in range(len(data_class0_tem)):
-        data_class0_tem[i] = Butterworth(data_class0_tem[i], type='bandpass', lowcut=2, highcut=15, order=2,
-                                         Sample_org=100)
-        # plt.plot(data_class0_tem[i], color='blue', label="正常数据")
-        # plt.show()
-    print('Butterworth test_time = %2d min : %2d s' % (
-        (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
+    # test_time = time.perf_counter()
+    # for i in range(len(data_class0_tem)):
+    #     data_class0_tem[i] = Butterworth(data_class0_tem[i], type='bandpass', lowcut=2, highcut=15, order=2,
+    #                                      Sample_org=100)        data_class0_tem[i] = Butterworth(data_class0_tem[i], type='bandpass', lowcut=2, highcut=15, order=2,
+    #                                      Sample_org=100)
+    # plt.plot(data_class0_tem[i], color='blue', label="正常数据")
+    # plt.show()
+    # print('Butterworth test_time = %2d min : %2d s' % (
+    #     (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
 
     #
     # for i in range(100):
-    #     plt.plot(data_class0_tem[i], color='blue', label="正常数据")
+    #     plt.plot(data_class5_tem[i], color='blue', label="正常数据")
     #     plt.show()
 
     # if tem_flag == 0:
@@ -111,69 +115,89 @@ def data_preprocess(dataset_input):
     #     temp = AllBeat_dataset[win].get()
     #     save_index = np.append(save_index, temp)  # 根据返回对象提取对应的返回数值
 
-    test_time = time.perf_counter()
-    # 去掉幅值超过一定范围的正常片段
-    threshold_value = 300
-    save_index = np.array([])
-    for i in range(tmp[0]):  # 执行速度非常慢，需要11s
-        if np.max(data_class0_tem[i]) - np.min(data_class0_tem[i]) < threshold_value:
-            save_index = np.append(save_index, i)
-
-    tem_cout = data_class0_tem.shape[0]  #
-    data_class0_tem = data_class0_tem[save_index.astype(int), :]  # 不能直接int(save_index)
-    print('All of the delete frag is : ', tem_cout - data_class0_tem.shape[0])
-    print('预处理：剔除阈值过大的片段后剩余正常片段个数 : ', data_class0_tem.shape)
-    print('test_time = %2d min : %2d s' % (
-        (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
+    # test_time = time.perf_counter()
+    # # 去掉幅值超过一定范围的正常片段
+    # threshold_value = 250
+    # save_index = np.array([])
+    # for i in range(tmp[0]):  # 执行速度非常慢，需要11s
+    #     if np.max(data_class0_tem[i]) - np.min(data_class0_tem[i]) < threshold_value:
+    #         save_index = np.append(save_index, i)
+    #
+    # tem_cout = data_class0_tem.shape[0]  #
+    # data_class0_tem = data_class0_tem[save_index.astype(int), :]  # 不能直接int(save_index)
+    # print('All of the delete frag is : ', tem_cout - data_class0_tem.shape[0])
+    # print('预处理：剔除阈值过大的片段后剩余正常片段个数 : ', data_class0_tem.shape)
+    # print('test_time = %2d min : %2d s' % (
+    #     (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
 
     # 随机抽取，使样本均衡且乱序
     data_class0_tem = data_class0_tem[
         # np.random.randint(data_class0_tem.shape[0], size=min(tmp.values()))]  # 这里不能继续使用tmp[0]，越界，用剔除后的维度
-        np.random.randint(data_class0_tem.shape[0], size=10 * min(tmp.values()))]  # 二分类用这条语句
-    data_class1_tem = data_class1_tem[np.random.randint(tmp[1], size=8 * min(tmp.values()))]
+        np.random.randint(data_class0_tem.shape[0], size=24645)]  # 二分类用这条语句 #size=5 * min(tmp.values())
+    # data_class1_tem = data_class1_tem[np.random.randint(tmp[1], size=4 * min(tmp.values()))]
     # data_class2_tem = data_class2_tem[np.random.randint(tmp[2], size=min(tmp.values()))]
     # data_class3_tem = data_class3_tem[np.random.randint(tmp[3], size=3 * min(tmp.values()))]
-    data_class4_tem = data_class4_tem[np.random.randint(tmp[4], size=min(tmp.values()))]
+    # data_class4_tem = data_class4_tem[np.random.randint(tmp[4], size=min(tmp.values()))]
     # data_class5_tem = data_class5_tem[np.random.randint(tmp[5], size=min(tmp.values()))]
 
-    preproccessed_data = np.vstack(
+    # preproccessed_data = np.vstack(
+    prep_data_ch0 = np.vstack(
         # (data_class0_tem, data_class1_tem, data_class2_tem, data_class3_tem, data_class4_tem, data_class5_tem))
-        (data_class0_tem, data_class1_tem, data_class4_tem))
+        (data_class0_tem, data_class1_tem, data_class2_tem))
+
+    prep_data_ch1 = np.zeros_like(prep_data_ch0)
+    # for i in tqdm(range(len(prep_data_ch1)), desc="prep_data_ch1 filting : "):
+    #     prep_data_ch1[i] = Butterworth(prep_data_ch0[i], type='lowpass', lowcut=1, order=2, Sample_org=100)
+    # for i in tqdm(range(len(prep_data_ch0)), desc="prep_data_ch1 filting : "):
+    #     prep_data_ch0[i] = Butterworth(prep_data_ch0[i], type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100)
+
+    # for i in tqdm(range(len(prep_data_ch0)), desc="prep_data_ch0 min_max normalize : "):
+    #     prep_data_ch0[i] = preprocessing.MinMaxScaler().fit_transform(prep_data_ch0[i].reshape(-1, 1)).reshape(1, -1)
+    # for i in tqdm(range(len(prep_data_ch1)), desc="prep_data_ch1 min_max normalize : "):
+    #     prep_data_ch1[i] = preprocessing.MinMaxScaler().fit_transform(prep_data_ch1[i].reshape(-1, 1)).reshape(1, -1)
+
+    prep_data_ch0 = prep_data_ch0.reshape(prep_data_ch0.shape[0], 1, prep_data_ch0.shape[1])
+    prep_data_ch1 = prep_data_ch1.reshape(prep_data_ch1.shape[0], 1, prep_data_ch1.shape[1])
+    # preproccessed_data = np.array([prep_data_ch0, prep_data_ch1])
+    prep_data = np.concatenate((prep_data_ch0, prep_data_ch1), axis=1)
+    print('New shape of preproccessed_data is : ', prep_data.shape)
+
+    # for i in range(20):
+    #     plt.plot(prep_data[i, 0, :], color='blue', label="CH0")
+    #     plt.plot(prep_data[i, 1, :] + 1, color='red', label="CH1")
+    #     plt.show()
+
     # preproccessed_label = np.hstack((np.full(min(tmp.values()), 0), np.full(min(tmp.values()), 1),
     #                                  np.full(min(tmp.values()), 2), np.full(min(tmp.values()), 3),
     #                                  np.full(min(tmp.values()), 4), np.full(min(tmp.values()), 5)))
-    preproccessed_label = np.hstack((np.full(10 * min(tmp.values()), 0), np.full(10 * min(tmp.values()), 1)))  # 二分类
+    # prep_label = np.hstack((np.full(5 * min(tmp.values()), 0), np.full(5 * min(tmp.values()), 1)))  # 二分类
+    prep_label = np.hstack((np.full(24645, 0), np.full(24645, 1)))  # 二分类
 
-    # filter_show = data_class0_tem
-    # for i in range(len(filter_show)):
-    #     filter_show[i] = Butterworth(filter_show[i], type='bandpass', lowcut=2, highcut=8, order=2, Sample_org=100)
-    # for i in range(100):
-    #     plt.plot(filter_show[i], color='blue', label="滤波后波形")
-    #     plt.show()
-
-    ###
-    for i in range(len(preproccessed_data)):
-        preproccessed_data[i] = Butterworth(preproccessed_data[i], type='bandpass', lowcut=2, highcut=15, order=2,
-                                            Sample_org=100)
-
-    return preproccessed_data, preproccessed_label
+    return prep_data_ch0, prep_label
 
 
 def main():
-    # 超参数
-    epochs = 10
-    batch_size = 128
+    # Hyper Parameters
+    EPOCH = 30  # 训练整批数据多少次
+    BATCH_SIZE = 512
     split_ratio = 0.7
+    TIME_STEP = 1  # rnn 时间步数 / 图片高度
+    INPUT_SIZE = 500  # rnn 每步输入值 / 图片每行像素
+    LR = 0.0001  # learning rate
     random.seed(1)
     start = time.perf_counter()  # Python 3.8不支持time.clock()
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    print("using {} device.".format(device))
+    # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    nw = min([os.cpu_count(), BATCH_SIZE if BATCH_SIZE > 1 else 0, 8])  # number of workers
+    # print('Using {0} device. | Using {1} dataloader workers every process'.format(device, nw))
 
     print('\033[1;32m Loading... \033[0m' % ())
-
-    dataset_load = np.load('dataset_Version_1.0.npy')  # 加载数据集，包含第一列的标签和后面的数据
+    dataset_load = np.load('dataset_Version_1.3(3s_7_sample_15Hz_lowpass).npy')  # 加载数据集，包含第一列的标签和后面的数据
     print('\033[1;32m Loading is complete, a total of time-consuming is : %f\033[0m' % (time.perf_counter() - start))
+
+    # show_num = 64
+    # for i in range(50):
+    #     frag_check_multi_show(signal=dataset_load, start_point=5000, win_count=show_num)
 
     data_load, label_load = data_preprocess(dataset_load)  # 对加载的数据集进行预处理
 
@@ -182,48 +206,54 @@ def main():
     data_load = torch.tensor(data_load, dtype=torch.float32)  # Tensor和tensor不一样
     label_load = torch.tensor(label_load, dtype=torch.long)  # torch.tensor可以同时转tensor和dtype
 
-    perm = torch.randperm(len(data_load))  # 返回一个0到n-1的数组
+    perm = torch.randperm(len(data_load))  # 返回一个0到n-1的数组0
     data_load = data_load[perm]  # 一种新的打乱方法，也可以直接用新建数组，打乱数组作为index方式
     label_load = label_load[perm]  # 这种用法必须是tensor
 
-    # for i in range(len(label_load)):  # 将六分类变成二分类
-    #     if label_load[i] > 0:
-    #         label_load[i] = 1  # 二分类只有0、1，不能出现2
+    print('The shape of data_load is {0} | label_load is {1}'.format(data_load.shape, label_load.shape))
 
-    print('The shape of data_load is  :', data_load.shape)
-    print('The shape of label_load is :', label_load.shape)
-
-    data_load = data_load.reshape(data_load.shape[0], 1, data_load.shape[1])  # reshape成Cov1D的输入维度
-    print('The shape of data_load after reshape is :', data_load.shape)
+    # b = a.transpose(1, 2)  # 交换第二维度和第三维度，改变了内存的位置
+    # data_load = data_load.reshape(data_load.shape[0], 1, data_load.shape[1])  # reshape成Cov1D的输入维度
+    # data_load = data_load.reshape(data_load.shape[0], 1, data_load.shape[2])  # reshape成Cov1D的输入维度
+    # print('The shape of data_load after reshape is :', data_load.shape)
 
     # label_load = label_load.reshape(label_load.shape[0], 1)   #之前好像需要这步操作，现在加上会报错，维度错误
     # label_load = label_load.reshape(label_load.shape[0])  #相当于没有操作
-    print('The shape of data_load after reshape is :', label_load.shape)
+    # print('The shape of label_load after reshape is :', label_load.shape)
 
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=100)
     train_dataset = torch.utils.data.TensorDataset(data_load[:int(split_ratio * len(data_load))],
                                                    label_load[:int(split_ratio * len(label_load))])
     validate_dataset = torch.utils.data.TensorDataset(data_load[int(split_ratio * len(data_load)):],
                                                       label_load[int(split_ratio * len(label_load)):])
 
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
-    print('Using {} dataloader workers every process'.format(nw))
-
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False,
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False,
                                                num_workers=nw)
-    validate_loader = torch.utils.data.DataLoader(dataset=validate_dataset, batch_size=batch_size, shuffle=False,
+    validate_loader = torch.utils.data.DataLoader(dataset=validate_dataset, batch_size=BATCH_SIZE, shuffle=False,
                                                   num_workers=nw)
 
     print(
         "using {} fragment for training, {} fragment for validation.".format(len(train_dataset), len(validate_dataset)))
 
-    net = vgg(model_name="vgg16", num_classes=2, init_weights=False).to(device)
+    net = vgg(model_name="vgg16", num_classes=2, init_weights=False)
+    # net = RNN()
+    # net = vgg(model_name="vgg16", num_classes=2, init_weights=False).to(device)
+    net = torch.nn.DataParallel(net, device_ids=[0]).cuda()
+
+    para_num = get_parameter_number(net)
+    # {:,}  1,000,000   以逗号分隔的数字格式
+    print('Total parameter number is : {Total:,} | Total trainable number is : {Trainable:,}'.format(
+        Total=para_num['Total'], Trainable=para_num['Trainable']))
+
     save_path = './{}Net.pth'.format('VGG')
+    # save_path = './{}.pth'.format('LSTM')
 
     loss_function = nn.CrossEntropyLoss()  # 交叉熵损失函数
-    optimizer = optim.Adam(net.parameters(), lr=0.0001)
+    optimizer = optim.Adam(net.parameters(), lr=LR)
 
+    label_true_tem, label_pred_tem, label_prob_tem = np.array([]), np.array([]), np.array([])
     best_acc = 0.0  # 记录最佳精度
-    for epoch in range(epochs):
+    for epoch in range(EPOCH):
         # train
         net.train()  # 切换到训练模式
         running_loss = 0.0
@@ -231,17 +261,16 @@ def main():
         for step, data in enumerate(train_bar):
             datas, labels = data
             optimizer.zero_grad()
-            outputs = net(datas.to(device))
-            # print('The shape of outputs is :', outputs.shape)
-            # print('The shape of labels is :', labels.shape)
-            loss = loss_function(outputs, labels.to(device))
+            # outputs = net(datas.to(device))
+            outputs = net(datas.cuda())
+            loss = loss_function(outputs, labels.cuda())
+            # loss = loss_function(outputs, labels.to(device))
             loss.backward()
             optimizer.step()
 
             # print statistics
             running_loss += loss.item()
-
-            train_bar.desc = "train epoch[{}/{}] loss:{:.3f}".format(epoch + 1, epochs, loss)
+            train_bar.desc = "train epoch[{}/{}] loss:{:.3f}".format(epoch + 1, EPOCH, loss)
 
         # validate
         '''
@@ -250,34 +279,50 @@ def main():
         '''
         net.eval()
         acc = 0.0  # accumulate accurate number / epoch
+        label_true_tem, label_pred_tem, label_prob_tem = 0, 0, 0
         with torch.no_grad():
             val_bar = tqdm(validate_loader)
             for val_data in val_bar:
                 val_datas, val_labels = val_data
-                outputs = net(val_datas.to(device))
+                outputs = net(val_datas.cuda())
+                # outputs = net(val_datas.to(device))
                 predict_y = torch.max(outputs, dim=1)[1]
 
-                if epoch == 9:
-                    for i in range(len(val_datas)):
-                        plt.plot(val_datas[i, 0, :])
-                        plt.title('The [predict / real]  is [{0} / {1}]'.format(predict_y[i], val_labels[i]))
-                        plt.show()
+                label_true_tem = np.append(label_true_tem, val_labels.numpy())
+                label_pred_tem = np.append(label_pred_tem, torch.max(outputs, dim=1)[1].cpu().numpy()).astype(int)
+                label_prob_tem = np.append(label_prob_tem, torch.max(torch.softmax(outputs, dim=1).cpu(), dim=1)[0])
 
-                acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
+                # if epoch == 9:
+                # for i in range(len(val_datas)):
+                #     plt.plot(val_datas[i, 0, :], color='blue', label="CH0")
+                # plt.plot(val_datas[i, 1, :] + 200, color='red', label="CH1")
+                # plt.title('The [predict / real]  is [{0} / {1}]'.format(predict_y[i], val_labels[i]))
+                # plt.show()
+
+                acc += torch.eq(predict_y, val_labels.cuda()).sum().item()
+                # acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
 
         val_accurate = acc / len(validate_dataset)
         print('[epoch %d] train_loss: %.3f  val_accuracy: %.3f' %
               (epoch + 1, running_loss / len(train_loader), val_accurate))
 
+        plt.title('Epoch: {0} / {1} '.format(epoch, EPOCH))
+        # statistics_show(label_true=label_true_tem, label_pred=label_pred_tem, label_prob=label_prob_tem)
+
         if val_accurate > best_acc:
             best_acc = val_accurate
             torch.save(net.state_dict(), save_path)
+            label_true, label_pred, label_prob = label_true_tem, label_pred_tem, label_prob_tem
 
-    print('The best val_accurate is : {}'.format(best_acc))
-
-    print('Finished Training')
+    print('Finished Training! The best val_accurate is : {0}'.format(best_acc))
     print('Total program execution time = %2d min : %2ds' % (
         (time.perf_counter() - start) // 60, (time.perf_counter() - start) % 60))
+
+    print('The shape of label_true is {0} | label_pred is {1} | label_prob is {2}: '.format(label_true.shape,
+                                                                                            label_pred.shape,
+                                                                                            label_prob.shape))
+
+    statistics_show(label_true=label_true, label_pred=label_pred, label_prob=label_prob)
 
 
 if __name__ == '__main__':

@@ -18,7 +18,12 @@ from matplotlib.pylab import mpl
 import multiprocessing
 from model import vgg
 import numpy as np
+import copy
 from scipy.fftpack import fft, ifft
+from sklearn import preprocessing
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+import pandas as pd
+from Artifact_Detection import *
 
 mpl.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文
 mpl.rcParams['axes.unicode_minus'] = False  # 显示负号
@@ -194,20 +199,151 @@ def Butterworth(x, type, lowcut=0, highcut=0, order=10, Sample_org=1000):
         print("Please choose a type of fliter")
 
 
+def standardization(data):
+    mu = np.mean(data, axis=0)
+    sigma = np.std(data, axis=0)
+    return (data - mu) / sigma
+
+def frag_check_multi_show(signal, start_point=0, win_count=0):  # show_data既可以加[]也可以不加
+    if win_count > 99:  # 限制窗口数量，防止太长的无效或大体动片段，导致卡死
+        win_count = 99
+    line = int(win_count ** 0.5) if (int(win_count ** 0.5)) ** 2 == win_count else int(win_count ** 0.5) + 1
+    list = int(win_count ** 0.5) if (int(win_count ** 0.5)) * line >= win_count else int(win_count ** 0.5) + 1
+
+    plt.figure(figsize=(16, 10))
+    for i in range(win_count):
+        plt.subplot(line, list, i + 1)  # 整体加多一行，list+i是因为第一整行占了全部列，所以下一个子图在此基础上+1开始算
+        # plt.ylim(0, 0.02)
+        if signal[start_point + i][0] == 0:
+            plt.plot(signal[start_point + i, 1:], color='green', label="正常数据")
+        if signal[start_point + i][0] == 1:
+            plt.plot(signal[start_point + i, 1:], color='red', label="大体动")
+        if signal[start_point + i][0] == 2:
+            plt.plot(signal[start_point + i, 1:], color='blue', label="小体动")
+        if signal[start_point + i][0] == 3:
+            plt.plot(signal[start_point + i, 1:], color='Yellow', label="深呼吸")
+        if signal[start_point + i][0] == 4:
+            plt.plot(signal[start_point + i, 1:], color='purple', label="脉冲体动")
+        if signal[start_point + i][0] == 5:
+            plt.plot(signal[start_point + i, 1:], color='orange', label="无效片段")
+    plt.show()
+
+
 def signal_split(data_input, split_step=1, split_len=5, sample_rate=100):
     begin_point = 0
     frag_len = split_len * sample_rate
 
-    frag_data = data_input[begin_point:begin_point + frag_len]  #
+    frag_data_ch0 = data_input[begin_point:begin_point + frag_len]  #
 
     begin_point += split_step * sample_rate
 
     while begin_point + frag_len < len(data_input):
-        frag_data = np.vstack((frag_data, data_input[begin_point: begin_point + frag_len]))
+        frag_data_ch0 = np.vstack((frag_data_ch0, data_input[begin_point: begin_point + frag_len]))
         begin_point += split_step * sample_rate
         print('begin_point is : %d / %d' % (begin_point, len(data_input)))
 
-    frag_data = np.vstack((frag_data, data_input[-frag_len:]))  #
+    frag_data_ch0 = np.vstack((frag_data_ch0, data_input[-frag_len:]))  #
+    tem_data = copy.deepcopy(frag_data_ch0)
+    frag_data_ch1 = np.zeros_like(frag_data_ch0)
+    # for i in tqdm(range(len(frag_data_ch1))):
+    #     frag_data_ch1[i] = Butterworth(frag_data_ch0[i], type='lowpass', lowcut=1, order=2, Sample_org=100)
+    # for i in tqdm(range(len(frag_data_ch0))):
+    #     frag_data_ch0[i] = Butterworth(frag_data_ch0[i], type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100)
+
+    frag_data_ch0 = frag_data_ch0.reshape(frag_data_ch0.shape[0], 1, frag_data_ch0.shape[1])
+    frag_data_ch1 = frag_data_ch1.reshape(frag_data_ch1.shape[0], 1, frag_data_ch1.shape[1])
+
+    # for i in tqdm(range(len(frag_data_ch0)), desc="prep_data_ch0 min_max normalize : "):
+    #     frag_data_ch0[i] = preprocessing.MinMaxScaler().fit_transform(frag_data_ch0[i].reshape(-1, 1)).reshape(1, -1)
+    # for i in tqdm(range(len(frag_data_ch1)), desc="prep_data_ch1 min_max normalize : "):
+    #     frag_data_ch1[i] = preprocessing.MinMaxScaler().fit_transform(frag_data_ch1[i].reshape(-1, 1)).reshape(1, -1)
+
+    # for i in range(len(frag_data_ch0)):
+    #     plt.plot(frag_data_ch0[i, 0, :], color='blue', label="Ch0")
+    #     plt.plot(frag_data_ch1[i, 0, :] - 1750, color='red', label="Ch1")
+    #     plt.plot(tem_data[i, :] - 1950, color='green', label="org")
+    #     plt.show()
+
+    frag_data = np.concatenate((frag_data_ch0, frag_data_ch1), axis=1)
 
     print(frag_data.shape)
-    return frag_data
+    return frag_data_ch0
+
+
+def org_artifact_show(file_Path, down_sample_rate=10, start_point=0, show_len=0, Y_shift=0):
+    if os.path.exists(os.path.join(file_Path, "raw_org.txt")) and os.path.exists(
+            os.path.join(file_Path, "Artifact_a.txt")):
+        data_path = os.path.join(file_Path, "raw_org.txt")  # 原始数据路径,"\\raw_org.txt"也可以
+        label_path = os.path.join(file_Path, "Artifact_a.txt")  # 体动数据路径
+    elif os.path.exists(os.path.join(file_Path, "new_org_1000hz.txt")) and os.path.exists(
+            os.path.join(file_Path, "Artifact_a.txt")):
+        data_path = os.path.join(file_Path, "new_org_1000hz.txt")  # 原始数据路径,"\\raw_org.txt"也可以
+        label_path = os.path.join(file_Path, "Artifact_a.txt")  # 体动数据路径
+    else:
+        print('数据或标签打开错误，不存在！')
+
+    orgBCG = pd.read_csv(data_path, header=None).to_numpy().reshape(-1)  # 原始数据读取为numpy形式
+    orgLabel = pd.read_csv(label_path, header=None).to_numpy().reshape(-1, 4)  # 标签数据读取为numpy形式，并reshape为n行4列的数组
+
+    orgBCG, orgLabel = data_Subsampled(orgBCG=orgBCG, orgLabel=orgLabel, sampleNum=down_sample_rate)
+    newBCG = Butterworth(orgBCG, type='lowpass', lowcut=15, order=2, Sample_org=1000 / down_sample_rate)
+    temBCG = copy.deepcopy(newBCG)
+
+    ArtifactData_tpye0 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+    ArtifactData_tpye1 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+    ArtifactData_tpye2 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+    ArtifactData_tpye3 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+    ArtifactData_tpye4 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+    ArtifactData_tpye5 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
+
+    for i in range(orgLabel.shape[0]):
+        if orgLabel[i][1] == 1:  # 根据体动类型分别判断和赋值
+            ArtifactData_tpye1[orgLabel[i][2]:orgLabel[i][3]] = newBCG[orgLabel[i][2]:orgLabel[i][3]]
+        elif orgLabel[i][1] == 2:
+            ArtifactData_tpye2[orgLabel[i][2]:orgLabel[i][3]] = newBCG[orgLabel[i][2]:orgLabel[i][3]]
+        elif orgLabel[i][1] == 3:
+            ArtifactData_tpye3[orgLabel[i][2]:orgLabel[i][3]] = newBCG[orgLabel[i][2]:orgLabel[i][3]]
+        elif orgLabel[i][1] == 4:
+            ArtifactData_tpye4[orgLabel[i][2]:orgLabel[i][3]] = newBCG[orgLabel[i][2]:orgLabel[i][3]]
+        elif orgLabel[i][1] == 5:
+            ArtifactData_tpye5[orgLabel[i][2]:orgLabel[i][3]] = newBCG[orgLabel[i][2]:orgLabel[i][3]]
+        else:
+            print('标签类型错误')
+        temBCG[orgLabel[i][2]:orgLabel[i][3]] = ArtifactData_tpye0[orgLabel[i][2]:orgLabel[i][3]]
+    ArtifactData_tpye0 = copy.deepcopy(temBCG)
+
+    plt.plot(ArtifactData_tpye0[start_point:start_point + show_len] + Y_shift, color='green', )
+    plt.plot(ArtifactData_tpye1[start_point:start_point + show_len] + Y_shift, color='red', )
+    plt.plot(ArtifactData_tpye2[start_point:start_point + show_len] + Y_shift, color='blue', )
+    plt.plot(ArtifactData_tpye3[start_point:start_point + show_len] + Y_shift, color='Gold', )
+    plt.plot(ArtifactData_tpye4[start_point:start_point + show_len] + Y_shift, color='purple', )
+    plt.plot(ArtifactData_tpye5[start_point:start_point + show_len] + Y_shift, color='orange', )
+
+
+def statistics_show(label_true, label_pred, label_prob):
+    plt.subplot(1, 2, 1)
+    confusion = confusion_matrix(label_true, label_pred)
+    print(confusion)
+    # 热度图，后面是指定的颜色块，可设置其他的不同颜色
+    plt.imshow(confusion, cmap=plt.cm.Blues)
+    for first_index in range(len(confusion)):  # 第几行
+        for second_index in range(len(confusion[first_index])):  # 第几列
+            plt.text(first_index, second_index, confusion[second_index][first_index])
+
+    plt.subplot(1, 2, 2)
+    # 二分类　ＲＯＣ曲线
+    # roc_curve:真正率（True Positive Rate , TPR）或灵敏度（sensitivity）
+    # 横坐标：假正率（False Positive Rate , FPR）
+    fpr, tpr, thresholds = roc_curve(label_true, label_prob)
+    # auc = auc(fpr, tpr)   #auc
+    auc_value = auc(fpr, tpr)
+    print("AUC : ", auc_value)
+    # plt.figure()
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.plot(fpr, tpr, label='VGG16 (area = {:.3f})'.format(auc_value))
+    plt.xlabel('False positive rate')
+    plt.ylabel('True positive rate')
+    plt.title('ROC curve')
+    plt.legend(loc='best')
+    # plt.savefig("../images/ROC/ROC_2分类.png")
+    plt.show()

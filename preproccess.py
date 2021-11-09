@@ -11,6 +11,7 @@
 # import numba as nb
 import os
 import time
+from my_utils import *
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,17 +52,25 @@ class preproccess(object):
         self.frag_count = 0  # 分割的体动片段个数
         self.norm_count = 0  # 分割的正常片段个数
         self.artifact_color = {1: "red", 2: "blue", 3: "brown", 4: "purple", 5: "orange", }
-        self.label_name = {"正常信号": 0, "大体动": 1, "小体动": 2, "深呼吸": 3, "脉冲体动": 4, "无效片段": 5}
-        self.label_name = dict(
-            (val, key) for key, val in self.label_name.items())  # 将获得的索引和键值反过来，方便后面通过索引直接获得键值,不这样做也可以
+        self.label_map = {"正常信号": 0, "大体动": 1, "小体动": 2, "深呼吸": 3, "脉冲体动": 4, "无效片段": 5}
+        self.label_map = dict(
+            (val, key) for key, val in self.label_map.items())  # 将获得的索引和键值反过来，方便后面通过索引直接获得键值,不这样做也可以
 
     def one_data_split(self):
         if self.downsampling > 1:  # 默认不开启降采样
             self.data_down_sampling()
         self.reArrange()  # 分割前先对数据进行重新排列，因为打标有些前面漏的会在后面补上，
+
+        # Butterworth Filter，统一输出15Hz低通信号
+        self.bcg_data = Butterworth(self.bcg_data, type='lowpass', lowcut=15, order=2, Sample_org=self.sample_rate)
+
+        # 体动分割
+        largen_value = int(0.2 * self.win_width)    #
         for i in range(len(self.bcg_label)):  # 对体动进行片段分割
-            start_point = self.bcg_label[i][2]
-            while start_point < self.bcg_label[i][3] and (start_point + self.win_width) < len(self.bcg_data):
+            start_point = self.bcg_label[i][2] if self.bcg_label[i][2] - largen_value < 0 else \
+                self.bcg_label[i][2] - largen_value  # 三元表达式，防止开头越界；整体前后都加2.5s
+            while start_point < self.bcg_label[i][3] + largen_value and (
+                    start_point + self.win_width) < len(self.bcg_data):
                 self.frag_data_buf[self.frag_count][:] = self.bcg_data[start_point: start_point + self.win_width]
                 # tem_frag = bcg_data[start_point: start_point + win_width]
                 # frag_data_buf = np.row_stack((frag_data_buf, tem_frag)) #这种写法速度非常慢
@@ -72,25 +81,35 @@ class preproccess(object):
                     break
                 start_point += self.artifact_time_granularity
 
+        # 正常信号分割
         start_point = seq_num = 0
         while start_point < len(self.bcg_data):
-            if start_point + self.win_width <= self.bcg_label[seq_num][2]:
-                self.norm_data_buf[self.norm_count][:] = self.bcg_data[start_point: start_point + self.win_width]
-                self.norm_count += 1
+            if start_point + self.win_width < self.bcg_label[seq_num][2] - int(2 * self.win_width):    #往后放宽半个
+                if (np.max(self.bcg_data[start_point: start_point + self.win_width]) - np.min(
+                        self.bcg_data[start_point: start_point + self.win_width]) < 1.2 * (np.max(
+                        self.bcg_data[start_point - 2*self.win_width: start_point]) - np.min(
+                        self.bcg_data[start_point - 2*self.win_width: start_point]))) and (np.max(
+                        self.bcg_data[start_point: start_point + self.win_width]) - np.min(
+                        self.bcg_data[start_point: start_point + self.win_width]) < 1.2 * (np.max(
+                        self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]) - np.min(
+                        self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]))):
+
+                    self.norm_data_buf[self.norm_count][:] = self.bcg_data[start_point: start_point + self.win_width]
+                    self.norm_count += 1
                 start_point += self.norm_time_granularity
             elif seq_num < len(self.bcg_label) - 1:  # 防止越界,len返回的是个数，而seq_num是数组下标，所以不仅要用<，还要在len - 1
-                start_point = self.bcg_label[seq_num][3]
+                start_point = self.bcg_label[seq_num][3] + int(2 * self.win_width)  #往前放宽2个
                 seq_num += 1
             else:
                 break
 
         self.all_frag_label_buf = np.hstack(  # 这里返回的标签，已经是一维数组
-            (self.frag_label_buf[1][:self.frag_count], np.zeros(self.norm_count)))  # 各分割片段标签拼接汇总
+            (self.frag_label_buf[1][:self.frag_count], np.zeros(self.norm_count)))  # 各分割片段标签拼接汇总，体动在前正常在后
 
         self.org_label_statistic(self.bcg_label, num_classes=6)  # 分割完之后对体动进行统计
         self.frag_label_statistic(self.all_frag_label_buf, num_classes=6)  # 分割完之后对体动进行统计
 
-        return np.vstack(
+        return np.vstack(  # 体动片段和标签在前，正常的在后
             (self.frag_data_buf[:self.frag_count][:], self.norm_data_buf[:self.norm_count][:])), self.all_frag_label_buf
 
     def multi_show(self, artifact_seq_num=0):  # show_data既可以加[]也可以不加
@@ -114,7 +133,7 @@ class preproccess(object):
         plt.plot(self.bcg_data[self.bcg_label[artifact_seq_num - 1][2]:self.bcg_label[artifact_seq_num - 1][3]],
                  # 务必务必务必记得-1
                  self.artifact_color[self.bcg_label[artifact_seq_num - 1][1]],
-                 label=self.label_name[self.bcg_label[artifact_seq_num - 1][1]])  # 索引从0开始
+                 label=self.label_map[self.bcg_label[artifact_seq_num - 1][1]])  # 索引从0开始
         plt.legend(ncol=2)
         for i in range(1, win_count + 1):
             plt.subplot(line + 1, list, list + i)  # 整体加多一行，list+i是因为第一整行占了全部列，所以下一个子图在此基础上+1开始算
@@ -124,14 +143,14 @@ class preproccess(object):
         plt.show()
 
     # def multi_show(show_data=[], win_count=1, begin_loc=0):
-    #     global frag_label_buf, label_name, frag_count
+    #     global frag_label_buf, label_map, frag_count
     #     frag_color = {1: "red", 2: "blue", 3: "brown", 4: "purple", 5: "orange", }
     #     line = int(win_count ** 0.5) if (int(win_count ** 0.5)) ** 2 == win_count else int(win_count ** 0.5) + 1
     #     list = int(win_count ** 0.5) if (int(win_count ** 0.5)) * line >= win_count else int(win_count ** 0.5) + 1
     #     for i in range(1, win_count + 1):
     #         plt.subplot(line, list, i)
     #         # plt.ylim(0, 0.02)
-    #         plt.plot(show_data[begin_loc], frag_color[frag_label_buf[begin_loc]], label=label_name[frag_label_buf[begin_loc]])
+    #         plt.plot(show_data[begin_loc], frag_color[frag_label_buf[begin_loc]], label=label_map[frag_label_buf[begin_loc]])
     #         plt.legend(ncol=2)
     #         begin_loc += 1
     #     plt.show()
@@ -204,7 +223,7 @@ def multi_data_split(filepath, file_nums='all'):
             分割的超参在这里！！！
             '''
             data_segmentation = preproccess(file_path=os.path.join(filepath, i), downsampling=10, artifact_stride=1,
-                                            norm_stride=4)  # 先实例化一个类，再调用函数
+                                            norm_stride=5, win_width=5)  # 先实例化一个类，再调用函数
             # frag_dataset, frag_label = np.zeros([data_segmentation.frag_count, data_segmentation.win_width]), np.full(
             #     data_segmentation.frag_count, np.nan) # 可以不用先创建空数组，下面直接赋值即可
             frag_dataset, frag_label = data_segmentation.one_data_split()
@@ -216,8 +235,7 @@ def multi_data_split(filepath, file_nums='all'):
             else:
                 all_data, all_label = np.vstack((all_data, frag_dataset)), np.hstack((all_label, frag_label))
 
-            print('The shape of frag_dataset is :', frag_dataset.shape)
-            print('The shape of frag_label is   :', frag_label.shape)
+            print('The shape of frag_dataset is {0} | frag_label is {1}'.format(frag_dataset.shape,frag_label.shape))
 
         if file_nums == 'all':
             pass
@@ -227,12 +245,12 @@ def multi_data_split(filepath, file_nums='all'):
     print('\033[1;31m 即将处理完毕 \033[0m')
     data_segmentation.frag_label_statistic(all_label, num_classes=6)
 
-    print('The shape of finally dataset is :', all_data.shape)
-    print('The shape of finally label is   :', all_label.shape)
+    print('The shape of finally dataset is : {0} | label is : {1}'.format(all_data.shape, all_label.shape))
 
-    print('The label dictionary is :', data_segmentation.label_name)
+    print('The label dictionary is :', data_segmentation.label_map)
     print('\033[1;31m 正在执行保存程序 \033[0m')
 
+    # 把标签作为一列放在最左边，信号在右边，保存为(-1,501)的.npy数据文件
     final_dataset = np.hstack((all_label.reshape(-1, 1), all_data))  # all_label一维数组是横向的，先转成列数组
     print('The shape of final dataset is : ', final_dataset.shape)
 
@@ -245,7 +263,8 @@ def multi_data_split(filepath, file_nums='all'):
     '''
     # np.savetxt(os.path.join(os.getcwd(), "dataset","dataset.txt"), all_data,fmt = '%d')  # 保存为整数,不能写成\dataset.txt，\相当于返回根目录
     # np.savetxt(os.path.join(os.getcwd(), "dataset","label.txt"), all_label,fmt = '%d')  # 保存为整数
-    np.save(os.path.join(os.getcwd(), "dataset_Version_1.0.npy"), final_dataset)  # 保存为整数,不能写成\dataset.txt，\相当于返回根目录
+    np.save(os.path.join(os.getcwd(), "dataset_Version_1.3(3s_7_sample_15Hz_lowpass).npy"),
+            final_dataset)  # 保存为整数,不能写成\dataset.txt，\相当于返回根目录
     # np.save(os.path.join(os.getcwd(), "label__Version_1.0.npy"), all_label)  # 保存为整数
 
     # with open(os.path.join(os.getcwd(), "dataset","dataset.txt"), 'w', encoding='utf-8') as file:
@@ -278,7 +297,7 @@ if __name__ == "__main__":
     '''
     这部分是多文件分割代码入口
     '''
-    file_path = '/home/qz/文档/Qz/WorkSpace/ArtifactDataset'
+    file_path = '/home/qz/文档/Qz/workspace/Checked_Dataset'
     multi_data_split(file_path, file_nums='all')
 
     '''
@@ -304,4 +323,4 @@ if __name__ == "__main__":
 
     print('The program is executed!')
     print('Total program execution time = %2d min : %2ds' % (
-    (time.perf_counter() - start) // 60, (time.perf_counter() - start) % 60))
+        (time.perf_counter() - start) // 60, (time.perf_counter() - start) % 60))

@@ -9,6 +9,7 @@
             <mapping deploy="/霹雳吧啦" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/霹雳吧啦" web="/" />
             <mapping deploy="/ai_test" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/ai_test" web="/" />
             <mapping deploy="/PythonTest" local="$PROJECT_DIR$/../../../PythonTest" web="/" />
+            <mapping deploy="/MorvanZhou" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/MorvanZhou" web="/" />
           </mappings>
         </serverdata>
       </paths>
@@ -19,6 +20,7 @@
             <mapping deploy="/霹雳吧啦" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/霹雳吧啦" web="/" />
             <mapping deploy="/ai_test" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/ai_test" web="/" />
             <mapping deploy="/PythonTest" local="$PROJECT_DIR$/../../../PythonTest" web="/" />
+            <mapping deploy="/MorvanZhou" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/MorvanZhou" web="/" />
           </mappings>
         </serverdata>
       </paths>

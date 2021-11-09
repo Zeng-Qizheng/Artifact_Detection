@@ -42,18 +42,20 @@ def data_Subsampled(orgBCG=[], orgLabel=[], sampleNum=1):
     :param sampleNum:             输入降采样倍数
     :return:                      无
     """
+    sub_data = np.full(len(orgBCG) // sampleNum, np.nan)  # 创建与orgBCG降采样后一样长度的空数组
+    sub_label = copy.deepcopy(orgLabel)
     for i in range(len(orgBCG) // sampleNum):
-        newBCG[i] = orgBCG[i * sampleNum]
+        sub_data[i] = orgBCG[i * sampleNum]
     for i in range(orgLabel.shape[0]):
-        orgLabel[i][2] //= sampleNum  # sunshi weibuzhudao
-        orgLabel[i][3] //= sampleNum
+        sub_label[i][2] //= sampleNum  # sunshi weibuzhudao
+        sub_label[i][3] //= sampleNum
 
     print('降采样倍数：%d' % sampleNum)
     print('原始数据长度：%d' % len(orgBCG))
-    print('降采样后长度：%d' % len(newBCG))
-    print('体动个数：%d' % orgLabel.shape[0])
+    print('降采样后长度：%d' % len(sub_data))
+    print('体动个数：%d' % sub_label.shape[0])
 
-    return newBCG, orgLabel
+    return sub_data, sub_label
 
 
 def labelShow(down_sample_rate=10):
@@ -185,12 +187,12 @@ def dataShow(showTimes=1):
     :param :              无
     :return:              无
     """
+    plt.plot(ArtifactData_tpye0, color='green', label="正常数据")
     plt.plot(ArtifactData_tpye1, color='red', label="大体动")
     plt.plot(ArtifactData_tpye2, color='blue', label="小体动")
     plt.plot(ArtifactData_tpye3, color='Gold', label="深呼吸")
     plt.plot(ArtifactData_tpye4, color='purple', label="脉冲体动")
     plt.plot(ArtifactData_tpye5, color='orange', label="无效片段")
-    plt.plot(newBCG, color='green', label="正常数据")
     plt.legend(ncol=2)
     # plt.ylim(1550, 2250)  #设置Y轴显示范围
     # plt.savefig(filePath + "/raw_org_label.jpg", dpi=300) #保存图片
@@ -199,7 +201,7 @@ def dataShow(showTimes=1):
 
 def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single_check=10, figure_num=[],
                  newLabel=None):
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(14.5, 10))
 
     if text_switch == True:  # 开启标签序号和起止位置显示
         if start == None:  # 如果没有这一步，后面会有一些细节错误，保险一点
@@ -210,24 +212,27 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
         for i in range(artifact_num, artifact_num + single_check):
             # if len(newBCG[newLabel[i][2]:newLabel[i][3]]) != 0:  # 有时候会出现空序列，意思是某个体动范围内有空值？无解
             plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 130,
+                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 250,
                      # 用numpy的max比普通max快很多，表现在拖动图片时延迟低很多
                      (newLabel[i][0], newLabel[i][1]), fontsize=12, color="Black", style="italic", weight="light",
                      verticalalignment='center', horizontalalignment='center', rotation=0)
             plt.text((newLabel[i][2] + newLabel[i][3]) // 2 - start,  # - start是相对于当前画面的起始点而言
-                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 110,
+                     np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 200,
                      (down_sample_rate * newLabel[i][2] / 1000, down_sample_rate * newLabel[i][3] / 1000),
                      fontsize=12, color="Black", style="italic", weight="light", verticalalignment='center',
                      horizontalalignment='center', rotation=0)
-            print('average = ', np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 110)
+            # print('average = ', np.average(newBCG[newLabel[i][2]:newLabel[i][3]]) + 110)
 
+    plt.plot(ArtifactData_tpye0[start:end], color='green', label="正常数据")
     plt.plot(ArtifactData_tpye1[start:end], color='red', label="大体动")
     plt.plot(ArtifactData_tpye2[start:end], color='blue', label="小体动")
     plt.plot(ArtifactData_tpye3[start:end], color='Yellow', label="深呼吸")
     plt.plot(ArtifactData_tpye4[start:end], color='purple', label="脉冲体动")
     plt.plot(ArtifactData_tpye5[start:end], color='orange', label="无效片段")
-    plt.plot(ArtifactData_tpye0[start:end], color='green', label="正常数据")
     # plt.ylim(-np.average(newBCG)-200,np.average(newBCG)+200)
+
+    plt.plot(Respiratory_baseline[start:end], color='black', label="呼吸基线")
+    plt.plot(clean_BCG[start:end], color='MidnightBlue', label="干净BCG")
 
     '''
     可以说很离谱了，x_tick在test测试不行，在实际使用又可以
@@ -274,59 +279,30 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
     #     print(x_tick[i])
     plt.xticks(ticks=x_tick, labels=x_label)
 
-    plt.xlabel('X Axis ：刻度为在原信号中的起始与终止位置')
-    plt.ylabel('Y Axis ：Voltage')
+    plt.xlabel('X Axis ：刻度为在原信号中的起始与终止位置', fontsize=14)
+    plt.ylabel('Y Axis ：Voltage', fontsize=14)
     # plt.ylim(1100, 2600)
-    plt.title('第 {0} 画 / 共 {1} 画'.format(figure_num[0], figure_num[1]), fontsize=20)
-    plt.legend(ncol=2)
+    plt.title('File name:{0} | Pages: 第 {1} 画 / 共 {2} 画'.format(file_Name, figure_num[0], figure_num[1]), fontsize=18)
+    plt.legend(loc='upper right', ncol=2)  # loc为Location Code ncol = 2为一行允许放入4个参数
     plt.show()
 
 
-def Butterworth(x, type, lowcut=0, highcut=0, order=10, Sample_org=1000):
-    """
-    函数说明：
-    将输入信号x，经过一Butterworth滤波器后，输出信号
-    :param x:                        输入处理信号
-    :param type:                     滤波类型(lowpass,highpass,bandpass)
-    :param lowcut:                   低频带截止频率
-    :param highcut:                  高频带截止频率
-    :param order:                    滤波器阶数
-    :return:                         返还处理后的信号
-    """
-    if type == "lowpass":  # 低通滤波处理
-        b, a = signal.butter(order, lowcut / (Sample_org * 0.5), btype='lowpass')
-        return signal.filtfilt(b, a, np.array(x))
-    elif type == "bandpass":  # 带通滤波处理
-        low = lowcut / (Sample_org * 0.5)
-        high = highcut / (Sample_org * 0.5)
-        b, a = signal.butter(order, [low, high], btype='bandpass')
-        return signal.filtfilt(b, a, np.array(x))
-    elif type == "highpass":  # 高通滤波处理
-        b, a = signal.butter(order, highcut / (Sample_org * 0.5), btype='highpass')
-        return signal.filtfilt(b, a, np.array(x))
-    else:  # 警告,滤波器类型必须有
-        print("Please choose a type of fliter")
-
-
-def standardization(data):
-    mu = np.mean(data, axis=0)
-    sigma = np.std(data, axis=0)
-    return (data - mu) / sigma
-
-
 if __name__ == "__main__":
-    filePath = "/home/qz/文档/Qz/workspace/ArtifactDataset/巢守达 2018081722-43-54"  # 文件夹的绝对路劲
-    bcgPath = filePath + "/raw_org.txt"  # 原始数据路径
-    labelPath = filePath + "/Artifact_a.txt"  # 体动数据路径
+    file_Path = "/home/qz/文档/Qz/workspace/ArtifactDataset/陈钲汶2018081321-39-31"  # 文件夹的绝对路劲
+    file_Name = os.path.basename(file_Path)
+    bcgPath = file_Path + "/raw_org.txt"  # 原始数据路径
+    labelPath = file_Path + "/Artifact_a.txt"  # 体动数据路径
     orgBCG = pd.read_csv(bcgPath, header=None).to_numpy().reshape(-1)  # 原始数据读取为numpy形式
     orgLabel = pd.read_csv(labelPath, header=None).to_numpy().reshape(-1, 4)  # 标签数据读取为numpy形式，并reshape为n行4列的数组
 
     down_sample_rate = 10  # 降采样倍数
-    newBCG = np.full(len(orgBCG) // down_sample_rate, np.nan)  # 创建与orgBCG降采样后一样长度的空数组
     newBCG, orgLabel = data_Subsampled(orgBCG=orgBCG, orgLabel=orgLabel, sampleNum=down_sample_rate)
-    temBCG = copy.deepcopy(newBCG)
+
+    Respiratory_baseline = Butterworth(newBCG, type='lowpass', lowcut=1, order=2, Sample_org=100) * 3 - 3000
+    clean_BCG = Butterworth(newBCG, type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100) + 1300
 
     # newBCG = Butterworth(newBCG, type='bandpass', lowcut=0.1, highcut=20, order=2, Sample_org=100)
+    newBCG = Butterworth(newBCG, type='lowpass', lowcut=15, order=2, Sample_org=100)
     # my_fft2(signal=newBCG, fs=100)
 
     ArtifactData_tpye0 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
@@ -336,13 +312,13 @@ if __name__ == "__main__":
     ArtifactData_tpye4 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
     ArtifactData_tpye5 = np.full(len(newBCG), np.nan)  # 创建与newBCG一样长度的空数组
 
-    # 依次执行功能代码
     # newBCG = standardization(newBCG)
     # newBCG = preprocessing.normalize(newBCG.reshape(1,-1), axis=1, norm='max').reshape(-1)
 
     # labelShow(down_sample_rate=down_sample_rate)  #显示整份数据的标签
+    temBCG = copy.deepcopy(newBCG)  # 这里必须用深拷贝，因为后面对temBCG修改，如果没有深拷贝，会把newBCG也改了
     dataProcessing()  # 将各类体动分别存储
-    ArtifactData_tpye0 = temBCG
+    ArtifactData_tpye0 = temBCG  # 理论上这里也要用深拷贝，否则后面对ArtifactData_tpye0修改，也会影响temBCG
 
     # dataShow()    #单纯显示整份数据的标签情况
     # muti_dataShow(single_len=3600, Sample_org=1000, down_sample_rate=down_sample_rate)    #固定长度交叠显示
