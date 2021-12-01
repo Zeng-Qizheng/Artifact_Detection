@@ -22,6 +22,10 @@
             <mapping deploy="/PythonTest" local="$PROJECT_DIR$/../../../PythonTest" web="/" />
             <mapping deploy="/MorvanZhou" local="$PROJECT_DIR$/../../../ML&amp;DL Learning/MorvanZhou" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath path="/Artifact_Detection/pth" />
+            <excludedPath path="/Artifact_Detection/dataset" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>

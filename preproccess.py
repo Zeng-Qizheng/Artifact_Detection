@@ -37,9 +37,8 @@ class preproccess(object):
         else:
             print('数据或标签打开错误，不存在！')
 
-        self.bcg_data = pd.read_csv(data_path, header=None, dtype=int).to_numpy().reshape(-1)  # 原始数据读取为numpy形式
-        self.reshape = pd.read_csv(label_path, header=None, dtype=int).to_numpy().reshape(-1, 4)
-        self.bcg_label = self.reshape  # 标签数据读取为numpy形式，并reshape为n行4列的数组
+        self.bcg_data = pd.read_csv(data_path, header=None, dtype=int).to_numpy().reshape(-1).astype(int)  # 原始数据读取为numpy形式
+        self.bcg_label = pd.read_csv(label_path, header=None, dtype=int).to_numpy().reshape(-1, 4)  # 标签数据读取为numpy形式，并reshape为n行4列的数组
         self.sample_rate = sample_rate // downsampling
         self.artifact_time_granularity = self.sample_rate * artifact_stride
         self.norm_time_granularity = self.sample_rate * norm_stride
@@ -56,7 +55,134 @@ class preproccess(object):
         self.label_map = dict(
             (val, key) for key, val in self.label_map.items())  # 将获得的索引和键值反过来，方便后面通过索引直接获得键值,不这样做也可以
 
-    def one_data_split(self):
+    def one_data_split_meth2(self, time_gran=1):
+        if self.downsampling > 1:  # 默认不开启降采样
+            self.data_down_sampling()
+        self.reArrange()  # 分割前先对数据进行重新排列，因为打标有些前面漏的会在后面补上，
+        # Butterworth Filter，统一输出15Hz低通信号
+        self.bcg_data = Butterworth(self.bcg_data, type='lowpass', lowcut=15, order=2, Sample_org=self.sample_rate)
+
+        for i in range(len(self.bcg_label)):
+            if self.bcg_label[i][1] == 3 or self.bcg_label[i][1] == 5:  # 先只保留大体动和小体动，把其余类型的删掉
+                self.bcg_data = np.delete(self.bcg_data, range(self.bcg_label[i][2] - 1, self.bcg_label[i][3])) #报错是因为标签范围本身就出错了
+                for t in range(i + 1, len(self.bcg_label)):
+                    self.bcg_label[t][2] -= int(self.bcg_label[i][3] - self.bcg_label[i][2]+1)  #长度需要算上出发点
+                    self.bcg_label[t][3] -= int(self.bcg_label[i][3] - self.bcg_label[i][2]+1)  #所以必须+1
+
+        label_distrib = np.full(len(self.bcg_data) // (time_gran * self.sample_rate), np.nan)
+        for i in range(len(self.bcg_label)):
+            if self.bcg_label[i][1] == 1 or self.bcg_label[i][1] == 2 or self.bcg_label[i][1] == 4:
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 1
+
+        for i in range(len(label_distrib)):
+            if label_distrib[i] != label_distrib[i]:
+                label_distrib[i] = 0
+
+        # for i in range()
+
+        show_artifact = np.full(len(self.bcg_data), np.nan)
+        show_norm = np.full(len(self.bcg_data), np.nan)
+        for i in range(len(label_distrib)):
+            if label_distrib[i] == 0:
+                show_norm[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+            else:
+                show_artifact[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+        plt.plot(show_norm, color='green')
+        plt.plot(show_artifact, color='red')
+        plt.show()
+
+
+    def one_data_split_meth3(self, time_gran = 1):
+        if self.downsampling > 1:  # 默认不开启降采样
+            self.data_down_sampling()
+        self.reArrange()  # 分割前先对数据进行重新排列，因为打标有些前面漏的会在后面补上，
+        # Butterworth Filter，统一输出15Hz低通信号
+        self.bcg_data = Butterworth(self.bcg_data, type='lowpass', lowcut=15, order=2, Sample_org=self.sample_rate).astype(int) #滤波会产生小数
+
+        #这里的time_gran时间粒度是指1s为间隔标注连续的标签
+        label_distrib = np.full(len(self.bcg_data) // (time_gran * self.sample_rate), np.nan)
+        for i in range(len(self.bcg_label)):
+            if self.bcg_label[i][1] == 1 :
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 1
+            elif self.bcg_label[i][1] == 2:
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 2
+            elif self.bcg_label[i][1] == 3:
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 3
+            elif self.bcg_label[i][1] == 4:
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 4
+            elif self.bcg_label[i][1] == 5:
+                label_distrib[math.ceil(self.bcg_label[i][2] / self.sample_rate):self.bcg_label[i][3] // self.sample_rate] = 5
+            else:
+                print('split error!')
+                break
+
+
+        for i in range(len(label_distrib)):
+            if label_distrib[i] != label_distrib[i]:
+                label_distrib[i] = 0
+
+        # pbar = tqdm(total=len(self.bcg_data))
+        # while start_point + self.win_width < len(self.bcg_data):
+        #     if start_point == 0:
+        #         frag_data_buf = np.hstack((label_distrib[start_point//self.sample_rate:(start_point+self.win_width)//self.sample_rate],self.bcg_data[start_point:start_point+self.win_width])).astype(int)
+        #     else:
+        #         frag_data_buf = np.vstack((frag_data_buf, np.hstack((label_distrib[start_point//self.sample_rate:(start_point+self.win_width)//self.sample_rate],self.bcg_data[start_point:start_point+self.win_width])))).astype(int)
+        #     start_point += self.artifact_time_granularity
+        #     pbar.update(self.artifact_time_granularity)
+
+        start_point = 0
+        #理论上这里长度应该是(len(self.bcg_data) - self.win_width)//self.artifact_time_granularity + 1，但会多出一行nan
+        frag_data_buf = np.full([(len(self.bcg_data) - self.win_width)//self.artifact_time_granularity, self.win_width + self.win_width // self.sample_rate], np.nan)
+        print(frag_data_buf.shape)
+        for i in trange((len(self.bcg_data) - self.win_width)//self.artifact_time_granularity):
+            if start_point + self.win_width < len(self.bcg_data):
+                frag_data_buf[i, :self.win_width // self.sample_rate] = label_distrib[start_point//self.sample_rate:(start_point+self.win_width)//self.sample_rate]
+                frag_data_buf[i, self.win_width // self.sample_rate:] = self.bcg_data[start_point:start_point+self.win_width]
+                start_point += self.artifact_time_granularity
+            else:
+                break
+
+        frag_data_buf = np.hstack((np.full(len(frag_data_buf),np.nan).reshape(-1,1), frag_data_buf))
+
+        for i in range(len(frag_data_buf)):
+            if 5 in frag_data_buf[i][1:self.win_width//self.sample_rate + 1]:
+                frag_data_buf[i][0] = 5
+            elif 4 in frag_data_buf[i][1:self.win_width // self.sample_rate + 1]:
+                frag_data_buf[i][0] = 4
+            elif 3 in frag_data_buf[i][1:self.win_width // self.sample_rate + 1]:
+                frag_data_buf[i][0] = 3
+            elif 2 in frag_data_buf[i][1:self.win_width // self.sample_rate + 1]:
+                frag_data_buf[i][0] = 2
+            elif 1 in frag_data_buf[i][1:self.win_width // self.sample_rate + 1]:
+                frag_data_buf[i][0] = 1
+            else:
+                frag_data_buf[i][0] = 0
+
+        return frag_data_buf
+
+        #这里画图出来的流畅度明显要比Artifact_Detection里面单独显示所有标签的流畅度要高
+        # show_artifact1 = np.full(len(self.bcg_data), np.nan)
+        # show_artifact3 = np.full(len(self.bcg_data), np.nan)
+        # show_artifact5 = np.full(len(self.bcg_data), np.nan)
+        # show_norm = np.full(len(self.bcg_data), np.nan)
+        # for i in range(len(label_distrib)):
+        #     if label_distrib[i] == 0:
+        #         show_norm[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+        #     elif label_distrib[i] == 1:
+        #         show_artifact1[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+        #     elif label_distrib[i] == 3:
+        #         show_artifact3[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+        #     elif label_distrib[i] == 5:
+        #         show_artifact5[i * 100:(i + 1) * 100] = self.bcg_data[i * 100:(i + 1) * 100]
+        # plt.plot(show_norm, color='green')
+        # plt.plot(show_artifact1, color='red')
+        # plt.plot(show_artifact3, color='yellow')
+        # plt.plot(show_artifact5, color='pink')
+        # plt.show()
+
+
+
+    def one_data_split_meth1(self):
         if self.downsampling > 1:  # 默认不开启降采样
             self.data_down_sampling()
         self.reArrange()  # 分割前先对数据进行重新排列，因为打标有些前面漏的会在后面补上，
@@ -65,7 +191,7 @@ class preproccess(object):
         self.bcg_data = Butterworth(self.bcg_data, type='lowpass', lowcut=15, order=2, Sample_org=self.sample_rate)
 
         # 体动分割
-        largen_value = int(0.2 * self.win_width)    #
+        largen_value = int(0.2 * self.win_width)  #
         for i in range(len(self.bcg_label)):  # 对体动进行片段分割
             start_point = self.bcg_label[i][2] if self.bcg_label[i][2] - largen_value < 0 else \
                 self.bcg_label[i][2] - largen_value  # 三元表达式，防止开头越界；整体前后都加2.5s
@@ -84,21 +210,20 @@ class preproccess(object):
         # 正常信号分割
         start_point = seq_num = 0
         while start_point < len(self.bcg_data):
-            if start_point + self.win_width < self.bcg_label[seq_num][2] - int(2 * self.win_width):    #往后放宽半个
+            if start_point + self.win_width < self.bcg_label[seq_num][2] - int(2 * self.win_width):  # 往后放宽半个
                 if (np.max(self.bcg_data[start_point: start_point + self.win_width]) - np.min(
                         self.bcg_data[start_point: start_point + self.win_width]) < 1.2 * (np.max(
-                        self.bcg_data[start_point - 2*self.win_width: start_point]) - np.min(
-                        self.bcg_data[start_point - 2*self.win_width: start_point]))) and (np.max(
-                        self.bcg_data[start_point: start_point + self.win_width]) - np.min(
-                        self.bcg_data[start_point: start_point + self.win_width]) < 1.2 * (np.max(
-                        self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]) - np.min(
-                        self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]))):
-
+                    self.bcg_data[start_point - 2 * self.win_width: start_point]) - np.min(
+                    self.bcg_data[start_point - 2 * self.win_width: start_point]))) and (np.max(
+                    self.bcg_data[start_point: start_point + self.win_width]) - np.min(
+                    self.bcg_data[start_point: start_point + self.win_width]) < 1.2 * (np.max(
+                    self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]) - np.min(
+                    self.bcg_data[start_point + self.win_width: start_point + 3 * self.win_width]))):
                     self.norm_data_buf[self.norm_count][:] = self.bcg_data[start_point: start_point + self.win_width]
                     self.norm_count += 1
                 start_point += self.norm_time_granularity
             elif seq_num < len(self.bcg_label) - 1:  # 防止越界,len返回的是个数，而seq_num是数组下标，所以不仅要用<，还要在len - 1
-                start_point = self.bcg_label[seq_num][3] + int(2 * self.win_width)  #往前放宽2个
+                start_point = self.bcg_label[seq_num][3] + int(2 * self.win_width)  # 往前放宽2个
                 seq_num += 1
             else:
                 break
@@ -109,8 +234,12 @@ class preproccess(object):
         self.org_label_statistic(self.bcg_label, num_classes=6)  # 分割完之后对体动进行统计
         self.frag_label_statistic(self.all_frag_label_buf, num_classes=6)  # 分割完之后对体动进行统计
 
-        return np.vstack(  # 体动片段和标签在前，正常的在后
-            (self.frag_data_buf[:self.frag_count][:], self.norm_data_buf[:self.norm_count][:])), self.all_frag_label_buf
+        # return np.vstack(  # 体动片段和标签在前，正常的在后
+        #     (self.frag_data_buf[:self.frag_count][:], self.norm_data_buf[:self.norm_count][:])), self.all_frag_label_buf
+
+        return_dataset = np.hstack((self.all_frag_label_buf.reshape(-1, 1), np.vstack(  # 体动片段和标签在前，正常的在后
+            (self.frag_data_buf[:self.frag_count][:], self.norm_data_buf[:self.norm_count][:]))))  # all_label一维数组是横向的，先转成列数组
+        return return_dataset
 
     def multi_show(self, artifact_seq_num=0):  # show_data既可以加[]也可以不加
         frag_count_seq = []  # 该体动被分成的片段个数
@@ -158,8 +287,7 @@ class preproccess(object):
     # with open("test.txt","w") as f:
     #     f.write("这是个测试！")  # 自带文件关闭功能，不需要再写f.close()
     def reArrange(self):
-        print('the shape of bcg_data is :', self.bcg_data.shape)
-        print('the shape of bcg_label is:', self.bcg_label.shape)
+        print('The shape of bcg_data is {0} | bcg_label is {1}'.format(self.bcg_data.shape,self.bcg_label.shape))
 
         for i in range(len(self.bcg_label)):
             if self.bcg_label[i][2] > self.bcg_label[i][3]:  # 首先判断是否有起始位置大于结束位置的情况，有则调转过来
@@ -183,9 +311,9 @@ class preproccess(object):
             self.bcg_label[i][2] //= self.downsampling
             self.bcg_label[i][3] //= self.downsampling
 
-        print('已开启降采样，当前降采样倍数===>>> %d 倍' % self.downsampling)
+        print('已开启降采样，当前降采样倍数=>> %d 倍' % self.downsampling)
         print('原始数据长度：%d' % len(self.bcg_data))
-        self.bcg_data = temBCG
+        self.bcg_data = copy.deepcopy(temBCG)
         print('降采样后长度：%d' % len(self.bcg_data))
 
     def org_label_statistic(self, org_label, num_classes=6):
@@ -223,19 +351,16 @@ def multi_data_split(filepath, file_nums='all'):
             分割的超参在这里！！！
             '''
             data_segmentation = preproccess(file_path=os.path.join(filepath, i), downsampling=10, artifact_stride=1,
-                                            norm_stride=5, win_width=5)  # 先实例化一个类，再调用函数
+                                            norm_stride=5, win_width=30)  # 先实例化一个类，再调用函数
             # frag_dataset, frag_label = np.zeros([data_segmentation.frag_count, data_segmentation.win_width]), np.full(
             #     data_segmentation.frag_count, np.nan) # 可以不用先创建空数组，下面直接赋值即可
-            frag_dataset, frag_label = data_segmentation.one_data_split()
 
+            # frag_dataset, frag_label = data_segmentation.one_data_split_meth1()
+            once_dataset = data_segmentation.one_data_split_meth3()
             if processed_count == 1:
-                # all_data, all_label = np.zeros([data_segmentation.frag_count, data_segmentation.win_width]), np.full(
-                #     data_segmentation.frag_count, np.nan) # 这里也是可以不用先创建空数组的
-                all_data, all_label = frag_dataset, frag_label
+                final_dataset = once_dataset
             else:
-                all_data, all_label = np.vstack((all_data, frag_dataset)), np.hstack((all_label, frag_label))
-
-            print('The shape of frag_dataset is {0} | frag_label is {1}'.format(frag_dataset.shape,frag_label.shape))
+                final_dataset = np.vstack((final_dataset, once_dataset))
 
         if file_nums == 'all':
             pass
@@ -243,16 +368,14 @@ def multi_data_split(filepath, file_nums='all'):
             break
 
     print('\033[1;31m 即将处理完毕 \033[0m')
-    data_segmentation.frag_label_statistic(all_label, num_classes=6)
-
-    print('The shape of finally dataset is : {0} | label is : {1}'.format(all_data.shape, all_label.shape))
-
+    data_segmentation.frag_label_statistic(final_dataset[:,0], num_classes=6)
     print('The label dictionary is :', data_segmentation.label_map)
+    print('The shape of final_dataset is : ',final_dataset.shape)
     print('\033[1;31m 正在执行保存程序 \033[0m')
 
     # 把标签作为一列放在最左边，信号在右边，保存为(-1,501)的.npy数据文件
-    final_dataset = np.hstack((all_label.reshape(-1, 1), all_data))  # all_label一维数组是横向的，先转成列数组
-    print('The shape of final dataset is : ', final_dataset.shape)
+    # final_dataset = np.hstack((all_label.reshape(-1, 1), all_data))  # all_label一维数组是横向的，先转成列数组
+    # print('The shape of final dataset is : ', final_dataset.shape)
 
     '''
     savetxt写为.npy和.txt大小没区别，而且写成的.npy无法读取，用save写入的.npy可以直接用load读取，速度极快
@@ -263,7 +386,7 @@ def multi_data_split(filepath, file_nums='all'):
     '''
     # np.savetxt(os.path.join(os.getcwd(), "dataset","dataset.txt"), all_data,fmt = '%d')  # 保存为整数,不能写成\dataset.txt，\相当于返回根目录
     # np.savetxt(os.path.join(os.getcwd(), "dataset","label.txt"), all_label,fmt = '%d')  # 保存为整数
-    np.save(os.path.join(os.getcwd(), "dataset_Version_1.3(3s_7_sample_15Hz_lowpass).npy"),
+    np.save(os.path.join(os.getcwd(),"dataset", "dataset_meth2_Version_1.0(30s_7_sample_15Hz_lowpass).npy"),
             final_dataset)  # 保存为整数,不能写成\dataset.txt，\相当于返回根目录
     # np.save(os.path.join(os.getcwd(), "label__Version_1.0.npy"), all_label)  # 保存为整数
 
@@ -307,7 +430,7 @@ if __name__ == "__main__":
     # data_segmentation = preproccess(file_path, downsampling=1)  # 先实例化一个类，再调用函数
     # frag_dataset_show, frag_label_show = np.zeros([data_segmentation.frag_count, data_segmentation.win_width]), np.full(
     #     data_segmentation.frag_count, np.nan)
-    # _, _ = data_segmentation.one_data_split()
+    # _, _ = data_segmentation.one_data_split_meth1()
     # for i in range(100, 110):
     #     data_segmentation.multi_show(i)
 
@@ -316,7 +439,7 @@ if __name__ == "__main__":
     '''
     # file_path = 'E:\Qz\临床原始数据\ArtifactDataset\吴自宁20180820 22-05-16'
     # data_segmentation = preproccess(file_path, downsampling=1)  # 先实例化一个类，再调用函数
-    # _, _ = data_segmentation.one_data_split()
+    # _, _ = data_segmentation.one_data_split_meth1()
     # for i in range(10, 110):
     #     plt.plot(data_segmentation.norm_data_buf[i][:])
     #     plt.show()

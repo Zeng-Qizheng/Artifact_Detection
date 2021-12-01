@@ -288,7 +288,7 @@ def final_figure(start=None, end=None, text_switch=False, artifact_num=0, single
 
 
 if __name__ == "__main__":
-    file_Path = "/home/qz/文档/Qz/workspace/ArtifactDataset/陈钲汶2018081321-39-31"  # 文件夹的绝对路劲
+    file_Path = "/home/qz/文档/Qz/workspace/ArtifactDataset/岑玉娴2018060622-16-25"  # 文件夹的绝对路劲
     file_Name = os.path.basename(file_Path)
     bcgPath = file_Path + "/raw_org.txt"  # 原始数据路径
     labelPath = file_Path + "/Artifact_a.txt"  # 体动数据路径
@@ -320,6 +320,6 @@ if __name__ == "__main__":
     dataProcessing()  # 将各类体动分别存储
     ArtifactData_tpye0 = temBCG  # 理论上这里也要用深拷贝，否则后面对ArtifactData_tpye0修改，也会影响temBCG
 
-    # dataShow()    #单纯显示整份数据的标签情况
+    dataShow()    #单纯显示整份数据的标签情况
     # muti_dataShow(single_len=3600, Sample_org=1000, down_sample_rate=down_sample_rate)    #固定长度交叠显示
     artifact_check(orgLabel, down_sample_rate=down_sample_rate)  # 根据单次体动数量分窗显示，检测标签情况

@@ -16,7 +16,8 @@ import torch.optim as optim
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import multiprocessing
-from model import *
+from model.model import *
+from model.LSTM_FCN import *
 from my_utils import *
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 from sklearn import preprocessing
@@ -49,7 +50,7 @@ def Processing_func(input, index):  # 用于多进程调用
 
 
 # @nb.jit()
-def data_preprocess(dataset_input):
+def data_preprocess_meth1(dataset_input):
     # 首先统计输入数据集的体动各类别数量和分布情况
     mask = np.unique(dataset_input[:, 0])  # np.unique寻找数组里面的重复数值
     tmp = {}  # 字典，记录每个体动类型的个数
@@ -83,16 +84,9 @@ def data_preprocess(dataset_input):
     # print('Butterworth test_time = %2d min : %2d s' % (
     #     (time.perf_counter() - test_time) // 60, (time.perf_counter() - test_time) % 60))
 
-    #
     # for i in range(100):
     #     plt.plot(data_class5_tem[i], color='blue', label="正常数据")
     #     plt.show()
-
-    # if tem_flag == 0:
-    #     tem_class0 = data_class0_tem[i]
-    #     tem_flag += 1
-    # else:
-    #     tem_class0 = np.vstack((tem_class0, data_class0_tem[i]))    #这种写法运算量非常大
 
     # #多进程反而变慢了（11s->3s），可能是因为创建进程也消耗时间，加速的那点时间赶不上自身消耗的时间
     # pool = multiprocessing.Pool(processes=20)  # 创建20个进程
@@ -176,119 +170,204 @@ def data_preprocess(dataset_input):
     return prep_data_ch0, prep_label
 
 
+def data_preprocess_meth2(dataset_input, win_width = 5, time_gran = 1):
+    # 首先统计输入数据集的体动各类别数量和分布情况
+    mask = np.unique(dataset_input[:, 0])  # np.unique寻找数组里面的重复数值
+    tmp = {}  # 字典，记录每个体动类型的个数
+    for v in mask:
+        tmp[v] = np.sum(dataset_input[:, 0] == v)  # 很秀的写法
+    # print('The tmp is : ', tmp)  # 统计结果
+
+    print('The label_map is : ', label_map)
+    label_statistic(org_label=dataset_input[:, 0], num_classes=6)  # 统计原始数据的分布情况
+
+    sort = np.lexsort(dataset_input.T[:1, :])  # 默认对二维数组最后一行排序并返回索引
+    dataset_input = dataset_input[sort, :]  # 根据体动类型排序
+
+    data_load = dataset_input[:, 1:]  # 把数据部分单独取出来，方便后面操作
+
+    # 从排序好的数组分别把每一类体动单片段独取出来
+    data_class0_tem = data_load[:tmp[0]]
+    data_class1_tem = data_load[tmp[0]:tmp[0] + tmp[1]]
+    data_class2_tem = data_load[tmp[0] + tmp[1]:tmp[0] + tmp[1] + tmp[2]]
+    data_class3_tem = data_load[-tmp[3] - tmp[4] - tmp[5]:-tmp[4] - tmp[5]]
+    data_class4_tem = data_load[-tmp[4] - tmp[5]:-tmp[5]]
+    data_class5_tem = data_load[-tmp[5]:]
+
+    # 随机抽取，使样本均衡且乱序
+    data_class0_tem = data_class0_tem[ # 这里不能继续使用tmp[0]，越界，用剔除后的维度
+        np.random.randint(data_class0_tem.shape[0], size=41605)]  # 二分类用这条语句 #size=5 * min(tmp.values())
+    # data_class1_tem = data_class1_tem[np.random.randint(tmp[1], size=40000)]
+    # data_class2_tem = data_class2_tem[np.random.randint(tmp[2], size=min(tmp.values()))]
+    # data_class3_tem = data_class3_tem[np.random.randint(tmp[3], size=3 * min(tmp.values()))]
+    # data_class4_tem = data_class4_tem[np.random.randint(tmp[4], size=min(tmp.values()))]
+    # data_class5_tem = data_class5_tem[np.random.randint(tmp[5], size=min(tmp.values()))]
+
+    # preproccessed_data = np.vstack(
+    prep_data_ch0 = np.vstack(
+        # (data_class0_tem, data_class1_tem, data_class2_tem, data_class3_tem, data_class4_tem, data_class5_tem))
+        (data_class0_tem, data_class1_tem, data_class2_tem))
+
+    prep_label    = prep_data_ch0[:, :win_width]
+    prep_data_ch0 = prep_data_ch0[:, win_width:]
+
+    prep_data_ch1 = np.zeros_like(prep_data_ch0)
+    # for i in tqdm(range(len(prep_data_ch1)), desc="prep_data_ch1 filting : "):
+    #     prep_data_ch1[i] = Butterworth(prep_data_ch0[i], type='lowpass', lowcut=1, order=2, Sample_org=100)
+    # for i in tqdm(range(len(prep_data_ch0)), desc="prep_data_ch1 filting : "):
+    #     prep_data_ch0[i] = Butterworth(prep_data_ch0[i], type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100)
+
+    prep_data_ch0 = prep_data_ch0.reshape(prep_data_ch0.shape[0], 1, prep_data_ch0.shape[1])
+    prep_data_ch1 = prep_data_ch1.reshape(prep_data_ch1.shape[0], 1, prep_data_ch1.shape[1])
+    # preproccessed_data = np.array([prep_data_ch0, prep_data_ch1])
+    prep_data = np.concatenate((prep_data_ch0, prep_data_ch1), axis=1)
+    print('New shape of preproccessed_data is : ', prep_data.shape)
+
+    # preproccessed_label = np.hstack((np.full(min(tmp.values()), 0), np.full(min(tmp.values()), 1),
+    #                                  np.full(min(tmp.values()), 2), np.full(min(tmp.values()), 3),
+    #                                  np.full(min(tmp.values()), 4), np.full(min(tmp.values()), 5)))
+    # prep_label = np.hstack((np.full(5 * min(tmp.values()), 0), np.full(5 * min(tmp.values()), 1)))  # 二分类
+
+    return prep_data_ch0, prep_label
+
+
 def main():
     # Hyper Parameters
-    EPOCH = 30  # 训练整批数据多少次
-    BATCH_SIZE = 512
-    split_ratio = 0.7
-    TIME_STEP = 1  # rnn 时间步数 / 图片高度
-    INPUT_SIZE = 500  # rnn 每步输入值 / 图片每行像素
-    LR = 0.0001  # learning rate
-    random.seed(1)
-    start = time.perf_counter()  # Python 3.8不支持time.clock()
+    EPOCH        = 100       # 训练整批数据多少次
+    BATCH_SIZE   = 512       # 每次训练多少份数据
+    split_ratio  = 0.7       # 训练集与验证集的划分
+    TIME_STEP    = 1         # rnn 时间步数 / 图片高度
+    INPUT_SIZE   = 500       # rnn 每步输入值 / 图片每行像素
+    LR           = 0.0001    # learning rate
+    thre_jud     = 0.6       # sigmoid出来后进行阈值判断，大于该值判为1
+    sample_rate  = 100
+    win_width    = 10        # 样本长度，单位为秒
+    time_gran    = 1         # 时间粒度，单位为秒
+    start        = time.perf_counter()  # Python 3.8不支持time.clock()
+    random.seed(1)           # 随机数种子
 
     # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     nw = min([os.cpu_count(), BATCH_SIZE if BATCH_SIZE > 1 else 0, 8])  # number of workers
     # print('Using {0} device. | Using {1} dataloader workers every process'.format(device, nw))
 
     print('\033[1;32m Loading... \033[0m' % ())
-    dataset_load = np.load('dataset_Version_1.3(3s_7_sample_15Hz_lowpass).npy')  # 加载数据集，包含第一列的标签和后面的数据
+    dataset_load = np.load('./dataset/dataset_meth2_Version_1.0(10s_7_sample_15Hz_lowpass).npy')  # 加载数据集，包含第一列的标签和后面的数据
     print('\033[1;32m Loading is complete, a total of time-consuming is : %f\033[0m' % (time.perf_counter() - start))
 
     # show_num = 64
     # for i in range(50):
     #     frag_check_multi_show(signal=dataset_load, start_point=5000, win_count=show_num)
 
-    data_load, label_load = data_preprocess(dataset_load)  # 对加载的数据集进行预处理
+    data_load, label_load = data_preprocess_meth2(dataset_input = dataset_load, win_width = win_width, time_gran = time_gran) # 对加载的数据集进行预处理
 
-    # data_load = torch.from_numpy(data_load) #numpy转tensor
-    # label_load = torch.from_numpy(label_load)
-    data_load = torch.tensor(data_load, dtype=torch.float32)  # Tensor和tensor不一样
-    label_load = torch.tensor(label_load, dtype=torch.long)  # torch.tensor可以同时转tensor和dtype
+    data_load  = torch.tensor(data_load,  dtype=torch.float32)   # Tensor和tensor不一样，或使用torch.from_numpy()
+    label_load = torch.tensor(label_load, dtype=torch.long)      # torch.tensor可以同时转tensor和dtype
 
-    perm = torch.randperm(len(data_load))  # 返回一个0到n-1的数组0
-    data_load = data_load[perm]  # 一种新的打乱方法，也可以直接用新建数组，打乱数组作为index方式
-    label_load = label_load[perm]  # 这种用法必须是tensor
+    perm = torch.randperm(len(data_load))  # 返回一个0到n-1的数组0（同时随机打乱数据集和标签）
+    data_load  = data_load[perm]           # 一种新的打乱方法，也可以直接用新建数组，打乱数组作为index方式
+    label_load = label_load[perm]          # 这种用法必须是tensor
 
     print('The shape of data_load is {0} | label_load is {1}'.format(data_load.shape, label_load.shape))
+
+    # for i in range(100):
+    #     plt.figure(figsize=(16, 8))
+    #     plt.plot(data_load[i,0,:])
+    #     plt.title(label_load[i,:].numpy())
+    #     plt.ylim(900, 3300)
+    #     plt.show()
+
 
     # b = a.transpose(1, 2)  # 交换第二维度和第三维度，改变了内存的位置
     # data_load = data_load.reshape(data_load.shape[0], 1, data_load.shape[1])  # reshape成Cov1D的输入维度
     # data_load = data_load.reshape(data_load.shape[0], 1, data_load.shape[2])  # reshape成Cov1D的输入维度
-    # print('The shape of data_load after reshape is :', data_load.shape)
-
     # label_load = label_load.reshape(label_load.shape[0], 1)   #之前好像需要这步操作，现在加上会报错，维度错误
     # label_load = label_load.reshape(label_load.shape[0])  #相当于没有操作
-    # print('The shape of label_load after reshape is :', label_load.shape)
 
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=100)
-    train_dataset = torch.utils.data.TensorDataset(data_load[:int(split_ratio * len(data_load))],
-                                                   label_load[:int(split_ratio * len(label_load))])
-    validate_dataset = torch.utils.data.TensorDataset(data_load[int(split_ratio * len(data_load)):],
-                                                      label_load[int(split_ratio * len(label_load)):])
+    train_dataset    = torch.utils.data.TensorDataset(data_load[:int(split_ratio * len(data_load))], label_load[:int(split_ratio * len(label_load))])
+    validate_dataset = torch.utils.data.TensorDataset(data_load[int(split_ratio * len(data_load)):], label_load[int(split_ratio * len(label_load)):])
 
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False,
-                                               num_workers=nw)
-    validate_loader = torch.utils.data.DataLoader(dataset=validate_dataset, batch_size=BATCH_SIZE, shuffle=False,
-                                                  num_workers=nw)
+    train_loader    = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=nw)
+    validate_loader = torch.utils.data.DataLoader(dataset=validate_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=nw)
 
-    print(
-        "using {} fragment for training, {} fragment for validation.".format(len(train_dataset), len(validate_dataset)))
+    print("using {} fragment for training, {} fragment for validation.".format(len(train_dataset), len(validate_dataset)))
 
-    net = vgg(model_name="vgg16", num_classes=2, init_weights=False)
-    # net = RNN()
-    # net = vgg(model_name="vgg16", num_classes=2, init_weights=False).to(device)
-    net = torch.nn.DataParallel(net, device_ids=[0]).cuda()
+    time_steps = win_width * sample_rate
+    num_variables = 2
 
-    para_num = get_parameter_number(net)
-    # {:,}  1,000,000   以逗号分隔的数字格式
-    print('Total parameter number is : {Total:,} | Total trainable number is : {Trainable:,}'.format(
-        Total=para_num['Total'], Trainable=para_num['Trainable']))
+    # model = vgg(model_name="vgg16", num_classes=2, init_weights=False)
+    model = VGG(num_classes=2, init_weights=False)  #使用自己修改的CNN网络，面目全非的VGG
+    # model = LSTMFCN(time_steps, num_variables)
+    # model = RNN()
+    # model = vgg(model_name="vgg16", num_classes=2, init_weights=False).to(device)
+    model = torch.nn.DataParallel(model, device_ids=[0]).cuda()
 
-    save_path = './{}Net.pth'.format('VGG')
-    # save_path = './{}.pth'.format('LSTM')
+    para_num = get_parameter_number(model)  #获取模型参数量
+    print('Total parameter number is : {Total:,} | Total trainable number is : {Trainable:,}'.format(Total=para_num['Total'], Trainable=para_num['Trainable'])) # {:,}  1,000,000   以逗号分隔的数字格式
 
-    loss_function = nn.CrossEntropyLoss()  # 交叉熵损失函数
-    optimizer = optim.Adam(net.parameters(), lr=LR)
+    save_path = './pth/{}Net.pth'.format('LSTM-FCN')
 
+    # loss_function = nn.CrossEntropyLoss()  # 交叉熵损失函数
+    loss_function = nn.BCELoss()  # BCELoss可以接收和input一样维度的target，而CrossEntropyLoss只能接收(N)的target
+    # loss_function = nn.NLLLoss()  # weight=weights
+    optimizer = optim.Adam(model.parameters(), lr=LR)
+
+    best_val_acc = 0.0  # 记录最佳验证精度
     label_true_tem, label_pred_tem, label_prob_tem = np.array([]), np.array([]), np.array([])
-    best_acc = 0.0  # 记录最佳精度
+    train_loss_all, train_acc_all, val_loss_all, val_acc_all = [], [], [], []
+
     for epoch in range(EPOCH):
-        # train
-        net.train()  # 切换到训练模式
-        running_loss = 0.0
+        model.train()  # 切换到训练模式
+        train_acc, train_loss, train_num = 0.0, 0.0, 0.0
         train_bar = tqdm(train_loader)
         for step, data in enumerate(train_bar):
-            datas, labels = data
+            train_datas, train_labels = data
             optimizer.zero_grad()
-            # outputs = net(datas.to(device))
-            outputs = net(datas.cuda())
-            loss = loss_function(outputs, labels.cuda())
-            # loss = loss_function(outputs, labels.to(device))
+
+            train_datas, train_labels = train_datas.float().cuda(), train_labels.float().cuda()  # BCELoss()要求输入是float型
+
+            outputs = model(train_datas.cuda())
+
+            outputs_prob = nn.functional.sigmoid(outputs).view(outputs.size(0), -1)  # BCELoss之前需要手动加入sigmoid激活
+
+            loss = loss_function(outputs_prob, train_labels.view(outputs.size(0), -1).cuda())
+
+            # loss = loss_function(outputs, labels.cuda())
             loss.backward()
             optimizer.step()
 
             # print statistics
-            running_loss += loss.item()
-            train_bar.desc = "train epoch[{}/{}] loss:{:.3f}".format(epoch + 1, EPOCH, loss)
+            train_loss += loss.item()
+            # train_bar.desc = "Epoch: {}/{} Training   loss:{:.3f}  ".format(epoch + 1, EPOCH, loss)  # 进度条前面显示的内容
+            train_bar.desc = "Training   loss:{:.3f}  ".format(loss)  # 进度条前面显示的内容
 
-        # validate
+            train_acc += ((outputs_prob > thre_jud) == train_labels).float().sum().cpu().data.numpy()
+            train_num += train_labels.shape[0]
+        train_loss_all = np.append(train_loss_all, train_loss)
+        train_acc_all  = np.append(train_acc_all, train_acc / train_num * time_gran / win_width) #因为一个片段内含有十个标签，所以要除
+
         '''
-        用测试集进行结果测试时，一定要用net.eval()把dropout关掉，因为这里目的是测试训练好
+        用测试集进行结果测试时，一定要用model.eval()把dropout关掉，因为这里目的是测试训练好
         的网络，而不是训练网络，没必要再dropout和计算BN的方差和均值(BN使用训练的历史值)。
         '''
-        net.eval()
-        acc = 0.0  # accumulate accurate number / epoch
+        model.eval() # validate
+        val_acc, val_loss, val_num = 0.0, 0.0, 0.0 # accumulate accurate number / epoch
         label_true_tem, label_pred_tem, label_prob_tem = 0, 0, 0
         with torch.no_grad():
+            val_loss = 0.0
             val_bar = tqdm(validate_loader)
             for val_data in val_bar:
                 val_datas, val_labels = val_data
-                outputs = net(val_datas.cuda())
-                # outputs = net(val_datas.to(device))
-                predict_y = torch.max(outputs, dim=1)[1]
 
-                label_true_tem = np.append(label_true_tem, val_labels.numpy())
+                val_datas, val_labels = val_datas.float().cuda(), val_labels.float().cuda()
+
+                outputs = model(val_datas.cuda())
+
+                outputs_prob = nn.functional.sigmoid(outputs).view(outputs.size(0), -1)
+                loss = loss_function(outputs_prob, val_labels.view(outputs.size(0), -1))
+
+                # predict_y = torch.max(outputs, dim=1)[1]
+                label_true_tem = np.append(label_true_tem, val_labels.cpu().numpy())
                 label_pred_tem = np.append(label_pred_tem, torch.max(outputs, dim=1)[1].cpu().numpy()).astype(int)
                 label_prob_tem = np.append(label_prob_tem, torch.max(torch.softmax(outputs, dim=1).cpu(), dim=1)[0])
 
@@ -299,22 +378,41 @@ def main():
                 # plt.title('The [predict / real]  is [{0} / {1}]'.format(predict_y[i], val_labels[i]))
                 # plt.show()
 
-                acc += torch.eq(predict_y, val_labels.cuda()).sum().item()
-                # acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
+                # if epoch == 19:
+                #     outputs_prob = outputs_prob.float().cpu().numpy()
+                #     outputs_prob[outputs_prob >= thre_jud] = 1
+                #     outputs_prob[outputs_prob < thre_jud]  = 0
+                #     val_datas  = val_datas.cpu().numpy()
+                #     for i in range(100):
+                #         plt.figure(figsize=(16, 8))
+                #         plt.plot(val_datas[i, 0, :])
+                #         plt.title(outputs_prob[i, :])
+                #         plt.ylim(1200, 2400)
+                #         plt.show()
 
-        val_accurate = acc / len(validate_dataset)
-        print('[epoch %d] train_loss: %.3f  val_accuracy: %.3f' %
-              (epoch + 1, running_loss / len(train_loader), val_accurate))
+                # val_acc += torch.eq(predict_y, val_labels.cuda()).sum().item()
 
-        plt.title('Epoch: {0} / {1} '.format(epoch, EPOCH))
+                val_loss += loss.item()
+                val_acc  += ((outputs_prob > thre_jud) == val_labels).float().sum().cpu().data.numpy()
+                val_num  += val_labels.shape[0]
+
+                val_bar.desc = "Validating loss:{:.3f} ".format(val_loss)  # 进度条前面显示的内容
+
+            val_loss_all = np.append(val_loss_all, val_loss)
+            val_acc_all  = np.append(val_acc_all, val_acc / val_num * time_gran / win_width)
+
+        val_accurate = val_acc / len(validate_dataset) * time_gran / win_width #1000是片段长度，100是每个小标签的长度，10秒里面有10个
+        print('\r[epoch %d] train_loss: %.3f  val_accuracy: %.3f\r' % (epoch + 1, train_loss / len(train_loader), val_accurate))
+
         # statistics_show(label_true=label_true_tem, label_pred=label_pred_tem, label_prob=label_prob_tem)
 
-        if val_accurate > best_acc:
-            best_acc = val_accurate
-            torch.save(net.state_dict(), save_path)
+        if val_accurate > best_val_acc:
+            best_val_acc = val_accurate
+            torch.save(model.state_dict(), save_path)
             label_true, label_pred, label_prob = label_true_tem, label_pred_tem, label_prob_tem
 
-    print('Finished Training! The best val_accurate is : {0}'.format(best_acc))
+
+    print('Finished Training! The best val_accurate is : {0}'.format(best_val_acc))
     print('Total program execution time = %2d min : %2ds' % (
         (time.perf_counter() - start) // 60, (time.perf_counter() - start) % 60))
 
@@ -322,7 +420,14 @@ def main():
                                                                                             label_pred.shape,
                                                                                             label_prob.shape))
 
-    statistics_show(label_true=label_true, label_pred=label_pred, label_prob=label_prob)
+    # statistics_show(label_true=label_true, label_pred=label_pred, label_prob=label_prob)
+
+    plt.plot(train_loss_all, color='green', label='train_loss')
+    plt.plot(train_acc_all, color='red', label='train_acc')
+    plt.plot(val_loss_all, color='blue', label='val_loss')
+    plt.plot(val_acc_all, color='Yellow', label='val_acc')
+    plt.legend(loc='best')
+    plt.show()
 
 
 if __name__ == '__main__':

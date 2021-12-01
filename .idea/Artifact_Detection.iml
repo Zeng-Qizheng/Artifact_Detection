@@ -8,6 +8,7 @@
     <orderEntry type="module" module-name="霹雳吧啦" />
     <orderEntry type="module" module-name="PythonTest" />
     <orderEntry type="module" module-name="MorvanZhou" />
+    <orderEntry type="module" module-name="QT" />
   </component>
   <component name="PyDocumentationSettings">
     <option name="format" value="PLAIN" />

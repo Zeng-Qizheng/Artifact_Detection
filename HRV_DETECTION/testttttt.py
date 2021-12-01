@@ -1370,7 +1370,7 @@ if __name__ == '__main__':
     # id = 89
     # orgBCG     = pd.read_csv("D:\David\dataset2021\ECG&BCG\671\BCG.txt"%(str(id))).to_numpy().reshape(-1)
     # locations_J = pd.read_csv("E:\Code\HRV_DETECTION2\dataset\%s\location_R.txt"%(str(id))).to_numpy().reshape(-1)
-    txtPath = "/home/qz/文档/Qz/WorkSpace/ArtifactDataset/岑玉娴2018060622-16-25/raw_org.txt"
+    txtPath = "/home/qz/文档/Qz/workspace/ArtifactDataset/岑玉娴2018060622-16-25/raw_org.txt"
     txtName = os.path.basename(txtPath)[:-4] + 'Movement' + '.txt'
     orgBCG     = pd.read_csv(txtPath).to_numpy().reshape(-1)
     # locations_J = pd.read_csv("E:/David/ECG&BCG/03/res_Ecg&Bcg_1/new_R_peak.txt").to_numpy().reshape(-1)

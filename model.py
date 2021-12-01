@@ -53,10 +53,88 @@ class RNN(nn.Module):
 # }
 
 
+# class VGG(nn.Module):
+#     def __init__(self, features, num_classes=1000, init_weights=False):
+#         super(VGG, self).__init__()
+#         self.features = features
+#         self.classifier = nn.Sequential(
+#             # nn.Linear(512*7*7, 4096),
+#             # nn.Linear(512 * 15, 4096),
+#             nn.Linear(16*15, 128),
+#             nn.ReLU(True),
+#             nn.Dropout(p=0.5),
+#             nn.Linear(128, 64),
+#             nn.ReLU(True),
+#             nn.Dropout(p=0.5),
+#             nn.Linear(64, num_classes)
+#         )
+#         if init_weights:
+#             self._initialize_weights()
+#
+#     def forward(self, x):
+#         # N x 3 x 224 x 224
+#         x = self.features(x)
+#         print("The shape of x after features is :",x.shape)
+#         # N x 512 x 7 x 7
+#         x = torch.flatten(x, start_dim=1)
+#         # N x 512*7*7
+#         x = self.classifier(x)
+#         return x
+#
+#     def _initialize_weights(self):
+#         for m in self.modules():
+#             if isinstance(m, nn.Conv2d):
+#                 # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+#                 nn.init.xavier_uniform_(m.weight)
+#                 if m.bias is not None:
+#                     nn.init.constant_(m.bias, 0)
+#             elif isinstance(m, nn.Linear):
+#                 nn.init.xavier_uniform_(m.weight)
+#                 # nn.init.normal_(m.weight, 0, 0.01)
+#                 nn.init.constant_(m.bias, 0)
+
 class VGG(nn.Module):
-    def __init__(self, features, num_classes=1000, init_weights=False):
+    def __init__(self, num_classes=1000, init_weights=False):
         super(VGG, self).__init__()
-        self.features = features
+        self.features = nn.Sequential(
+
+            nn.Conv1d(1, 16, kernel_size=3, padding=1),
+            nn.BatchNorm1d(16),
+            nn.ReLU(True),
+
+            nn.MaxPool1d(kernel_size=2, stride=2),
+
+            nn.Conv1d(16, 32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(True),
+
+            nn.MaxPool1d(kernel_size=2, stride=2),
+
+            nn.Conv1d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(True),
+
+            nn.MaxPool1d(kernel_size=2, stride=2),
+
+            nn.Conv1d(64, 32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(True),
+
+            nn.MaxPool1d(kernel_size=2, stride=2),
+
+            nn.Conv1d(32, 16, kernel_size=3, padding=1),
+            nn.BatchNorm1d(16),
+            nn.ReLU(True),
+
+            nn.MaxPool1d(kernel_size=2, stride=2),
+
+            nn.Conv1d(16, 1, kernel_size=24, padding=1),
+            nn.BatchNorm1d(1),
+            # nn.ReLU(True),
+            # nn.Softmax(10)
+
+
+        )
         self.classifier = nn.Sequential(
             # nn.Linear(512*7*7, 4096),
             # nn.Linear(512 * 15, 4096),
@@ -75,10 +153,13 @@ class VGG(nn.Module):
         # N x 3 x 224 x 224
         x = self.features(x)
         # print("The shape of x after features is :",x.shape)
+        # x = nn.Softmax(dim=1)(x)
+        # print(x[:10])
+        # print(torch.sum(x,dim=1))
         # N x 512 x 7 x 7
-        x = torch.flatten(x, start_dim=1)
+        # x = torch.flatten(x, start_dim=1)
         # N x 512*7*7
-        x = self.classifier(x)
+        # x = self.classifier(x)
         return x
 
     def _initialize_weights(self):
@@ -92,6 +173,7 @@ class VGG(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 # nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
 
 
 def make_features(cfg: list):
@@ -169,3 +251,56 @@ class AlexNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
+
+class FCN_model(nn.Module):
+    def __init__(self, NumClassesOut, N_time, N_Features, N_LSTM_Out=128, N_LSTM_layers=1
+                 , Conv1_NF=128, Conv2_NF=256, Conv3_NF=128,lstmDropP = 0.8,FC_DropP = 0.3):
+        super(FCN_model, self).__init__()
+
+        self.N_time = N_time
+        self.N_Features = N_Features
+        self.NumClassesOut = NumClassesOut
+        self.N_LSTM_Out = N_LSTM_Out
+        self.N_LSTM_layers = N_LSTM_layers
+        self.Conv1_NF = Conv1_NF
+        self.Conv2_NF = Conv2_NF
+        self.Conv3_NF = Conv3_NF
+        self.lstm = nn.LSTM(self.N_Features, self.N_LSTM_Out, self.N_LSTM_layers)
+        self.C1 = nn.Conv1d(self.N_Features, self.Conv1_NF, 8)
+        self.C2 = nn.Conv1d(self.Conv1_NF, self.Conv2_NF, 5)
+        self.C3 = nn.Conv1d(self.Conv2_NF, self.Conv3_NF, 3)
+        self.BN1 = nn.BatchNorm1d(self.Conv1_NF)
+        self.BN2 = nn.BatchNorm1d(self.Conv2_NF)
+        self.BN3 = nn.BatchNorm1d(self.Conv3_NF)
+        self.relu = nn.ReLU()
+        self.lstmDrop = nn.Dropout(lstmDropP)
+        self.ConvDrop = nn.Dropout(FC_DropP)
+        self.FC = nn.Linear(self.Conv3_NF + self.N_LSTM_Out, self.NumClassesOut)
+
+
+    def init_hidden(self):
+        h0 = torch.zeros(self.N_LSTM_layers, self.N_time, self.N_LSTM_Out).to(device)
+        c0 = torch.zeros(self.N_LSTM_layers, self.N_time, self.N_LSTM_Out).to(device)
+        return h0, c0
+
+
+    def forward(self, x):
+        # input x should be in size [B,T,F] , where B = Batch size
+        #                                         T = Time sampels
+        #                                         F = features
+
+        h0, c0 = self.init_hidden()
+        x1, (ht, ct) = self.lstm(x, (h0, c0))
+        x1 = x1[:, -1, :]
+
+        x2 = x.transpose(2, 1)
+        x2 = self.ConvDrop(self.relu(self.BN1(self.C1(x2))))
+        x2 = self.ConvDrop(self.relu(self.BN2(self.C2(x2))))
+        x2 = self.ConvDrop(self.relu(self.BN3(self.C3(x2))))
+        x2 = torch.mean(x2, 2)
+
+        x_all = torch.cat((x1, x2), dim=1)
+        x_out = self.FC(x_all)
+        return x_out
+

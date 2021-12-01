@@ -12,11 +12,10 @@ import time
 import torch.nn as nn
 from torchvision import transforms, datasets
 import torch.optim as optim
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 from matplotlib.pylab import mpl
 import multiprocessing
-from model import vgg
 import numpy as np
 import copy
 from scipy.fftpack import fft, ifft
@@ -24,6 +23,9 @@ from sklearn import preprocessing
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 import pandas as pd
 from Artifact_Detection import *
+from model.model import *
+from model.LSTM_FCN import *
+
 
 mpl.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文
 mpl.rcParams['axes.unicode_minus'] = False  # 显示负号
@@ -229,7 +231,7 @@ def frag_check_multi_show(signal, start_point=0, win_count=0):  # show_data既�
     plt.show()
 
 
-def signal_split(data_input, split_step=1, split_len=5, sample_rate=100):
+def signal_split_meth1(data_input, split_step=1, split_len=5, sample_rate=100):
     begin_point = 0
     frag_len = split_len * sample_rate
 
@@ -242,7 +244,7 @@ def signal_split(data_input, split_step=1, split_len=5, sample_rate=100):
         begin_point += split_step * sample_rate
         print('begin_point is : %d / %d' % (begin_point, len(data_input)))
 
-    frag_data_ch0 = np.vstack((frag_data_ch0, data_input[-frag_len:]))  #
+    # frag_data_ch0 = np.vstack((frag_data_ch0, data_input[-frag_len:])) #把末尾一段单独分割，但标签输出和显示比较麻烦，暂时注释
     tem_data = copy.deepcopy(frag_data_ch0)
     frag_data_ch1 = np.zeros_like(frag_data_ch0)
     # for i in tqdm(range(len(frag_data_ch1))):
@@ -267,6 +269,31 @@ def signal_split(data_input, split_step=1, split_len=5, sample_rate=100):
     frag_data = np.concatenate((frag_data_ch0, frag_data_ch1), axis=1)
 
     print(frag_data.shape)
+    return frag_data_ch0
+
+
+def signal_split_meth2(data_input, split_len=10, sample_rate=100):
+    begin_point = 0
+    frag_len = split_len * sample_rate
+
+    frag_data_ch0 = np.full([len(data_input)//frag_len,frag_len],np.nan)
+
+    for i in trange(len(data_input)//frag_len):
+        frag_data_ch0[i] = data_input[begin_point: begin_point + frag_len]
+        begin_point += frag_len
+
+    frag_data_ch1 = np.zeros_like(frag_data_ch0)
+    # for i in tqdm(range(len(frag_data_ch1))):
+    #     frag_data_ch1[i] = Butterworth(frag_data_ch0[i], type='lowpass', lowcut=1, order=2, Sample_org=100)
+    # for i in tqdm(range(len(frag_data_ch0))):
+    #     frag_data_ch0[i] = Butterworth(frag_data_ch0[i], type='bandpass', lowcut=2, highcut=15, order=2, Sample_org=100)
+
+    frag_data_ch0 = frag_data_ch0.reshape(frag_data_ch0.shape[0], 1, frag_data_ch0.shape[1])
+    frag_data_ch1 = frag_data_ch1.reshape(frag_data_ch1.shape[0], 1, frag_data_ch1.shape[1])
+
+    frag_data = np.concatenate((frag_data_ch0, frag_data_ch1), axis=1)
+
+    print('The shape of frag_data after split is : ',frag_data.shape)
     return frag_data_ch0
 
 
